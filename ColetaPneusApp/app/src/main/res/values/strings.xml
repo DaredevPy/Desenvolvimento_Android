@@ -1,0 +1,7 @@
+<resources>
+    <string name="app_name">Coleta de Pneus</string>
+    <string name="titulo_tela_inicial">Bem-vindo ao Coleta Pneus</string>
+    <string name="btn_sou_cliente">Sou Cliente</string>
+    <string name="btn_sou_prestador">Sou Prestador</string>
+    <string name="texto_subtitulo">Conectamos quem precisa descartar com quem coleta</string>
+</resources>
