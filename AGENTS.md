@@ -69,3 +69,39 @@ PostgreSQL 15+ (Banco Relacional Transacional)
 - [ ] Não existem *secrets*, senhas ou tokens gravados em arquivos de código?
 - [ ] Algum documento base na raiz foi contradito? Se sim, o conflito foi reportado?
 - [ ] A ordem de prioridade (Funcionamento $\rightarrow$ Segurança $\rightarrow$ Consistência $\rightarrow$ Testes $\rightarrow$ Estética) foi respeitada?
+
+## PRINCÍPIO — CÓDIGO ENXUTO
+
+O projeto deve evitar código desnecessário.
+
+Regras:
+
+1. Não criar funções que não sejam utilizadas.
+2. Não criar classes sem responsabilidade definida.
+3. Não criar arquivos "para o futuro" sem necessidade arquitetural.
+4. Não criar abstrações prematuras.
+5. Não duplicar lógica.
+6. Não manter imports não utilizados.
+7. Não manter variáveis não utilizadas.
+8. Não manter métodos mortos.
+9. Não manter comentários que apenas repetem o código.
+10. Não criar código apenas para demonstrar uma possibilidade futura.
+11. Não adicionar dependências sem necessidade real.
+12. Antes de criar uma nova função, verificar se já existe uma função equivalente.
+13. Antes de criar um novo serviço, verificar se a responsabilidade já existe.
+14. Remover código morto identificado com segurança.
+15. Manter o código legível e testável.
+
+### Regra de equilíbrio
+
+"Menos linhas" NÃO deve ser usado como justificativa
+para tornar o código ilegível.
+
+A prioridade é:
+
+funcionalidade
+→ segurança
+→ simplicidade
+→ legibilidade
+→ reutilização
+→ performance

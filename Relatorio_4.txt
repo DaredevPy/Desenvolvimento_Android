@@ -1,0 +1,87 @@
+===============================================================================
+RELATÓRIO DA MISSÃO 02 — MODELAGEM DO DOMÍNIO DA PLATAFORMA (Relatorio_4.txt)
+===============================================================================
+
+1. ENTIDADES DEFINIDAS (MANTIDAS COMO TABELAS RELACIONAIS):
+-------------------------------------------------------------------------------
+- users (Autenticação Base): Identidade de acesso, e-mail, hash de senha salgado,
+  status da conta e role primária (CLIENTE, PRESTADOR, ADMINISTRADOR).
+- profiles (Dados Pessoais e Comerciais): Nome/Razão Social, CPF/CNPJ, Telefone
+  e Chave Pix do prestador.
+- clients (Extensão Cliente): Endereço padrão e parâmetros contratuais do cliente.
+- providers (Extensão Prestador): Dados operacionais, score de reputação acumulado,
+  taxa de resposta e veículo.
+- collections (Coleta - Entidade Central): Entidade transacional principal
+  gerenciadora da máquina de estados, datas, snapshots de preços e chave de idempotência.
+- collection_items_declared (Carga Declarada): Carga pré-declarada pelo cliente.
+- collection_items_checked (Carga Conferida): Resultado da contagem física presencial
+  e coletada pelo prestador no local, com justificativa e evidências.
+- tires (Registro Detalhado do Pneu): Registro individualizado de pneus por DOT (Semana/Ano),
+  Número de Fogo, Série, idade calculada e alerta visual de obsolescência (>= 7 anos).
+- financial_transactions (Lançamentos Financeiros): Lançamentos de crédito/débito desacoplados
+  (cliente vs prestador) fixados por snapshots imutáveis no encerramento da coleta.
+- price_rules (Tabela Paramétrica de Preços): Faixas de volume de pneus e valores unitários
+  parametrizados por perfil (CLIENTE ou PRESTADOR).
+- provider_reputation_events (Eventos de Reputação): Registro imutável de eventos operacionais
+  (aceites rápidos, cancelamentos, pontualidade, avaliações, divergências) para composição do score.
+- provider_restrictions (Restrições de Prestador): Registro formal, motivado e temporário de
+  sanções aplicadas por administradores a prestadores.
+- audit_logs (Trilha de Auditoria): Log imutável de ações administrativas gravado no servidor.
+
+-------------------------------------------------------------------------------
+2. ENTIDADES DESCARTADAS / INCORPORADAS COMO ATRIBUTOS OU VALUE OBJECTS:
+-------------------------------------------------------------------------------
+- Administrador: Incorporado como valor da role ('ADMINISTRADOR') na tabela users.
+- Endereço / Local de Coleta: Incorporado como Value Object JSONB imutável em
+  collections.endereco_origem_json para prevenir alterações retroativas.
+- Status da Coleta: Incorporado como campo enumerado (collections.status).
+- Divergências e Evidências Visuais: Incorporadas como atributos em
+  collection_items_checked (justificativa_divergencia, fotos_divergencia_json) e tires.
+
+-------------------------------------------------------------------------------
+3. RELACIONAMENTOS DEFINIDOS:
+-------------------------------------------------------------------------------
+- users 1:1 profiles
+- profiles 1:1 clients (opcional)
+- profiles 1:1 providers (opcional)
+- clients 1:N collections
+- providers 1:N collections
+- collections 1:N collection_items_declared
+- collections 1:N collection_items_checked
+- collections 1:N tires
+- collections 1:N financial_transactions
+- providers 1:N provider_reputation_events
+- providers 1:N provider_restrictions
+- users 1:N price_rules
+- users 1:N provider_restrictions
+- users 1:N audit_logs
+
+-------------------------------------------------------------------------------
+4. DECISÕES ARQUITETURAIS E MODELAGEM IMPORTANTE:
+-------------------------------------------------------------------------------
+- Regra Crítica do DOT (DOT NÃO É UNIQUE): O código DOT identifica semana/ano do lote.
+  Múltiplos pneus podem possuir o mesmo DOT. Cada pneu possui seu UUIDv4 próprio.
+  Idade calculada por: Ano_Atual - Ano_DOT. Alerta visual vermelho se idade >= 7 anos.
+- Abordagem Híbrida de Pneus (ADR 12): Agrupamento rápido em collection_items_checked +
+  registro individual em tires para rastreabilidade de DOTs e números de fogo/série.
+- Event Sourcing de Reputação (ADR 13): Pontuação calculada a partir de registros imutáveis
+  de eventos operacionais em provider_reputation_events.
+- Independência Financeira e Snapshots: Condições comerciais desacopladas cliente vs prestador.
+  Valores fixados por snapshots imutáveis em collections e financial_transactions.
+
+-------------------------------------------------------------------------------
+5. DECISÕES PENDENTES IDENTIFICADAS (DECISÃO PENDENTE):
+-------------------------------------------------------------------------------
+- Fórmula matemática e pesos percentuais exatos para composição do reputacao_score.
+- Prazo máximo em dias para abertura de contestação formal pós-coleta pelo cliente.
+- Modelagem de frota de veículos para prestadores PJ com múltiplos motoristas associados.
+
+-------------------------------------------------------------------------------
+6. ALTERAÇÕES REALIZADAS NOS DOCUMENTOS:
+-------------------------------------------------------------------------------
+- 06_MODELO_DE_DADOS.md: Atualizado com a especificação conceitual completa,
+  análise de entidades mantidas/descartadas, comparação híbrida de pneus, regra do DOT,
+  suporte offline, detalhamento de tabelas e o Diagrama ER em Mermaid.
+- 12_DECISOES_ARQUITETURAIS.md: Adicionados os registros ADR 12 (Modelagem Híbrida de Pneus)
+  e ADR 13 (Registro Imutável de Eventos para Reputação).
+===============================================================================

@@ -1,8 +1,8 @@
 // lib/main.dart
 import 'package:flutter/material.dart';
-import 'services/firebase_service.dart';
-import 'telas/cliente/tela_cliente_adicionar_pneu.dart';
-import 'telas/prestador/tela_prestador_listar_pendentes.dart';
+import 'core/services/firebase_service.dart';
+import 'cliente/tela_cliente_adicionar_pneu.dart';
+import 'prestador/tela_prestador_listar_pendentes.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -28,7 +28,7 @@ class TelaPrincipal extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: Text('Coleta de Pneus')),
+      appBar: AppBar(title: const Text('Coleta de Pneus')),
       body: Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
@@ -38,14 +38,14 @@ class TelaPrincipal extends StatelessWidget {
                 Navigator.push(
                   context,
                   MaterialPageRoute(
-                    builder: (_) => TelaClienteAdicionarPneu(clienteId: 'cliente123'),
+                    builder: (_) => const TelaClienteAdicionarPneu(clienteId: 'cliente123'),
                   ),
                 );
               },
-              child: Text('Sou Cliente'),
-              style: ElevatedButton.styleFrom(minimumSize: Size(200, 50)),
+              style: ElevatedButton.styleFrom(minimumSize: const Size(200, 50)),
+              child: const Text('Sou Cliente'),
             ),
-            SizedBox(height: 20),
+            const SizedBox(height: 20),
             ElevatedButton(
               onPressed: () {
                 Navigator.push(
@@ -55,8 +55,8 @@ class TelaPrincipal extends StatelessWidget {
                   ),
                 );
               },
-              child: Text('Sou Prestador'),
-              style: ElevatedButton.styleFrom(minimumSize: Size(200, 50)),
+              style: ElevatedButton.styleFrom(minimumSize: const Size(200, 50)),
+              child: const Text('Sou Prestador'),
             ),
           ],
         ),

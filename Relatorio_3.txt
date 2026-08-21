@@ -1,0 +1,83 @@
+===============================================================================
+RELATÓRIO DA MISSÃO 01 — PREPARAÇÃO DA FUNDAÇÃO DO PROJETO (Relatorio_3.txt)
+===============================================================================
+
+1. ARQUIVOS ALTERADOS / REORGANIZADOS:
+-------------------------------------------------------------------------------
+- lib/main.dart (atualizados imports para a nova estrutura lib/core/, lib/cliente/, lib/prestador/)
+- test/models_test.dart (atualizados imports dos modelos para package:meu_app_coleta_pneus/core/models/...)
+- Reorganizados e migrados para a nova estrutura limpa:
+  * lib/core/models/pneu.dart
+  * lib/core/models/usuario.dart
+  * lib/core/services/firebase_service.dart
+  * lib/core/widgets/card_pneu.dart
+  * lib/cliente/cliente_service.dart (removido import não utilizado cloud_firestore.dart)
+  * lib/cliente/tela_cliente_adicionar_pneu.dart (corrigido aviso de depreciação do DropdownButtonFormField)
+  * lib/prestador/prestador_service.dart
+  * lib/prestador/tela_prestador_listar_pendentes.dart
+
+-------------------------------------------------------------------------------
+2. ARQUIVOS REMOVIDOS:
+-------------------------------------------------------------------------------
+Em conformidade com o Princípio — Código Enxuto do AGENTS.md, foram removidos
+7 arquivos rascunho de 0 bytes sem utilização nem imports:
+- lib/telas/cliente/tela_cliente_listar_pneus.dart (0 bytes)
+- lib/telas/cliente/tela_cliente_perfil.dart (0 bytes)
+- lib/telas/comum/tela_login.dart (0 bytes)
+- lib/telas/comum/tela_principal.dart (0 bytes)
+- lib/telas/prestador/tela_prestador_historico.dart (0 bytes)
+- lib/telas/prestador/tela_prestador_perfil.dart (0 bytes)
+- lib/widgets/botao_personalizado.dart (0 bytes)
+
+Também foram consolidados e limpos os diretórios legados lib/models/, lib/services/, lib/telas/, lib/widgets/.
+
+-------------------------------------------------------------------------------
+3. DEPENDÊNCIAS REMOVIDAS:
+-------------------------------------------------------------------------------
+Nenhuma dependência foi removida do pubspec.yaml nesta missão para garantir que
+o código legado continue funcionando até a migração do backend.
+
+-------------------------------------------------------------------------------
+4. DEPENDÊNCIAS FIREBASE ENCONTRADAS:
+-------------------------------------------------------------------------------
+- No pubspec.yaml: firebase_core: ^2.24.2, cloud_firestore: ^4.17.0
+- No código-fonte:
+  * lib/core/services/firebase_service.dart (Firebase.initializeApp(), FirebaseFirestore.instance, coleções)
+  * lib/cliente/cliente_service.dart (métodos set, snapshots, where no Firestore)
+  * lib/prestador/prestador_service.dart (métodos update, snapshots no Firestore)
+  * lib/main.dart (inicializador FirebaseService().init())
+
+-------------------------------------------------------------------------------
+5. CÓDIGO REAPROVEITÁVEL:
+-------------------------------------------------------------------------------
+- Modelos (lib/core/models/): DTOs Pneu e Usuario com métodos toMap() e fromMap() reutilizáveis para JSON.
+- Componentes Visuais (lib/core/widgets/): Widget CardPneu independente de backend.
+- Formulários e Telas (lib/cliente/ e lib/prestador/): Lógica de formulário em TelaClienteAdicionarPneu
+  e listagem em TelaPrestadorListarPendentes.
+
+-------------------------------------------------------------------------------
+6. CÓDIGO QUE DEVERÁ SER MIGRADO (Substituição pelo Cliente REST FastAPI):
+-------------------------------------------------------------------------------
+1. FirebaseService (lib/core/services/firebase_service.dart) -> Substituir por ApiService (Cliente REST HTTP).
+2. ClienteService (lib/cliente/cliente_service.dart) -> Substituir chamadas Firestore por chamadas HTTP REST.
+3. PrestadorService (lib/prestador/prestador_service.dart) -> Substituir chamadas Firestore por chamadas HTTP REST.
+
+-------------------------------------------------------------------------------
+7. PROBLEMAS ENCONTRADOS E RESOLVIDOS:
+-------------------------------------------------------------------------------
+- Import sem uso em cliente_service.dart (cloud_firestore.dart) -> RESOLVIDO (removido).
+- Membro depreciado em tela_cliente_adicionar_pneu.dart (value no DropdownButtonFormField) -> RESOLVIDO (substituído por initialValue).
+
+-------------------------------------------------------------------------------
+8. RESULTADO DO FLUTTER ANALYZE:
+-------------------------------------------------------------------------------
+Analyzing meu_app_coleta_pneus...
+No issues found! (ran in 3.8s)
+Zero erros e zero avisos na análise estática.
+
+-------------------------------------------------------------------------------
+9. RESULTADO DOS TESTES (FLUTTER TEST):
+-------------------------------------------------------------------------------
+00:00 +12: All tests passed!
+Todos os 12 testes automatizados executados com 100% de sucesso.
+===============================================================================

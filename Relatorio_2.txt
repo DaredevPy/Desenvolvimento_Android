@@ -1,0 +1,79 @@
+===============================================================================
+RELATÓRIO DE AUDITORIA E LIMPEZA CONTROLADA DO PROJETO - PARTE 2
+===============================================================================
+
+1. ARQUIVOS REMOVIDOS:
+-------------------------------------------------------------------------------
+Nenhum arquivo de código, documentação ou configuração funcional foi removido.
+Seguindo a diretriz "Em caso de dúvida, NÃO APAGUE. A prioridade é PRESERVAR
+FUNCIONALIDADE", nenhum arquivo foi deletado. Os diretórios ephemerais de build
+(.dart_tool/, build/ e .flutter-plugins-dependencies) foram devidamente ignorados
+pela criação do arquivo .gitignore.
+
+-------------------------------------------------------------------------------
+2. ARQUIVOS MANTIDOS:
+-------------------------------------------------------------------------------
+A) Documentação Arquitetural na Raiz do Repositório:
+- 01_VISAO_DO_PRODUTO.md
+- 02_ARQUITETURA.md
+- 03_REGRAS_DE_NEGOCIO.md
+- 04_PERFIS_E_PERMISSOES.md
+- 05_FLUXO_DA_COLETA.md
+- 06_MODELO_DE_DADOS.md
+- 07_FINANCEIRO.md
+- 08_SEGURANCA.md
+- 09_OFFLINE_E_SINCRONIZACAO.md
+- 10_ADMINISTRACAO_E_AUDITORIA.md
+- 11_ROADMAP.md
+- 12_DECISOES_ARQUITETURAIS.md
+- AGENTS.md
+- Relatorio.txt
+
+B) Código e Configuração do Aplicativo Flutter (meu_app_coleta_pneus/):
+- pubspec.yaml e pubspec.lock
+- lib/main.dart (ponto de entrada da aplicação)
+- lib/models/pneu.dart e lib/models/usuario.dart
+- lib/services/firebase_service.dart, cliente_service.dart, prestador_service.dart
+- lib/telas/cliente/tela_cliente_adicionar_pneu.dart
+- lib/telas/prestador/tela_prestador_listar_pendentes.dart
+- lib/widgets/card_pneu.dart
+- test/models_test.dart e test/widget_test.dart
+- Diretórios nativos android/ e ios/
+
+-------------------------------------------------------------------------------
+3. ARQUIVOS PARA REVISÃO MANUAL [REVISAR]:
+-------------------------------------------------------------------------------
+Os seguintes arquivos possuem 0 bytes (placeholders de telas a serem construídas
+nas próximas fases do Roadmap). Foram preservados por segurança:
+
+- meu_app_coleta_pneus/lib/telas/cliente/tela_cliente_listar_pneus.dart (0 bytes)
+- meu_app_coleta_pneus/lib/telas/cliente/tela_cliente_perfil.dart (0 bytes)
+- meu_app_coleta_pneus/lib/telas/comum/tela_login.dart (0 bytes)
+- meu_app_coleta_pneus/lib/telas/comum/tela_principal.dart (0 bytes)
+- meu_app_coleta_pneus/lib/telas/prestador/tela_prestador_historico.dart (0 bytes)
+- meu_app_coleta_pneus/lib/telas/prestador/tela_prestador_perfil.dart (0 bytes)
+- meu_app_coleta_pneus/lib/widgets/botao_personalizado.dart (0 bytes)
+- meu_app_coleta_pneus/README.md (0 bytes)
+
+-------------------------------------------------------------------------------
+4. POSSÍVEIS PROBLEMAS ENCONTRADOS:
+-------------------------------------------------------------------------------
+- Ausência de .gitignore (RESOLVIDO): Foi criado o arquivo .gitignore no subprojeto
+  meu_app_coleta_pneus/.gitignore para evitar que pastas temporárias de build
+  (.dart_tool/, build/, .flutter-plugins-dependencies) fossem commitadas no Git.
+
+- Secrets Potencialmente Expostos: NENHUM secret real (API Key, senha ou token)
+  foi encontrado no código-fonte ou nos arquivos do repositório.
+
+- Incompatibilidade de Dependências Legadas: O pubspec.yaml possui dependências
+  do Firebase (firebase_core, cloud_firestore). A arquitetura oficial (02_ARQUITETURA.md)
+  define o uso de FastAPI + PostgreSQL. As dependências foram preservadas intactas
+  para refatoração na Fase 1/Fase 2 do Roadmap.
+
+-------------------------------------------------------------------------------
+5. RESULTADO FINAL:
+-------------------------------------------------------------------------------
+A auditoria e limpeza controlada foram concluídas com 100% de segurança.
+Nenhum import foi quebrado, os testes existentes foram preservados e toda a
+documentação base na raiz do repositório permanece intacta.
+===============================================================================

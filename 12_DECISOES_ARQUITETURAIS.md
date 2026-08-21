@@ -4,7 +4,7 @@ Este documento registra as principais decisões de arquitetura e design tomadas 
 
 ---
 
-### ADR 01: Adocão do Flutter/Dart para o Frontend Multiplataforma
+### ADR 01: Adoção do Flutter/Dart para o Frontend Multiplataforma
 - **Status:** Aprovado.
 - **Contexto:** Necessidade de disponibilizar a aplicação em Android, iOS e Web.
 - **Decisão:** Utilizar o framework **Flutter (Dart)** com uma única base de código (*single codebase*).
@@ -38,7 +38,7 @@ Este documento registra as principais decisões de arquitetura e design tomadas 
 
 ### ADR 05: Render como Infraestrutura Inicial (Agnóstica a Provedor)
 - **Status:** Aprovado.
-- **Contexto:** Necessidade de hospedagem ágil e de baixo custo para MVP e testes sem acoplamento a um fornecedor de nuvem especifico.
+- **Contexto:** Necessidade de hospedagem ágil e de baixo custo para MVP e testes sem acoplamento a um fornecedor de nuvem específico.
 - **Decisão:** Utilizar o **Render** para hospedagem do Web Service (FastAPI) e PostgreSQL gerenciado na fase inicial, mantendo toda a aplicação conteinerizada em Docker.
 - **Justificativa:** Permite deploy rápido e automatizado no MVP sem criar dependências de código proprietário. A aplicação pode ser migrada para AWS, GCP ou Azure no futuro alterando apenas as variáveis de implantação.
 
@@ -89,3 +89,27 @@ Este documento registra as principais decisões de arquitetura e design tomadas 
 - **Contexto:** Agilidade na operação de campo do prestador no local de coleta.
 - **Decisão:** O cliente declara previamente a carga e o app do prestador carrega esses dados para conferência presencial **sem exigir re-digitação**.
 - **Justificativa:** Maximiza a produtividade do prestador no campo, reduz erros de digitação e destaca de forma imediata quaisquer divergências entre o declaradas e o conferido.
+
+---
+
+### ADR 12: Registro Individual Obrigatório de Pneus com Número de Fogo
+- **Status:** Aprovado.
+- **Contexto:** Necessidade de rastreabilidade patrimonial e física individual de 100% dos pneus coletados na plataforma.
+- **Decisão:** **Todo pneu coletado é registrado como uma entidade individual em `tires` com `UUIDv4` próprio.** Cada registro contempla o Número de Fogo (marcação a ferro quente), número de série, DOT (`WWYY`), marca, medida, modelo, observações e idade calculada.
+- **Justificativa:** Elimina a contagem exclusivamente agregada, garantindo controle individual de estoque, inventário por número de fogo e rastreabilidade por idade de fabricação.
+
+---
+
+### ADR 13: Registro Imutável de Eventos para Reputação do Prestador
+- **Status:** Aprovado.
+- **Contexto:** Necessidade de calcular a pontuação do prestador de forma transparente, não manipulável e auditável.
+- **Decisão:** Gravar eventos operacionais imutáveis em `provider_reputation_events` (aceites, recusas, pontualidade, cancelamentos, avaliações) e calcular o score dinamicamente no backend.
+- **Justificativa:** Impede edições arbitrárias na pontuação do prestador e fornece histórico auditável completo para contestação de sanções ou avaliações.
+
+---
+
+### ADR 14: Configuração de Regras de Preço via Dashboard Administrativa com Snapshot Histórico
+- **Status:** Aprovado.
+- **Contexto:** Gerenciamento centralizado de precificação por administradores com garantia de imutabilidade histórica.
+- **Decisão:** O usuário Administrador configura as tabelas de preços independentes (Cliente vs Prestador) através da Dashboard Administrativa. Toda alteração gera log de auditoria, e o encerramento da coleta fixa os valores devidos por *snapshot* imutável.
+- **Justificativa:** Permite parametrização comercial dinâmica sem riscos de recalcular retroativamente coletas finalizadas no passado.

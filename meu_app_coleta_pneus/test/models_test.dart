@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:meu_app_coleta_pneus/models/usuario.dart';
-import 'package:meu_app_coleta_pneus/models/pneu.dart';
+import 'package:meu_app_coleta_pneus/core/models/usuario.dart';
+import 'package:meu_app_coleta_pneus/core/models/pneu.dart';
 
 void main() {
   group('Testes do Modelo Usuário', () {

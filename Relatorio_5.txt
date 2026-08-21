@@ -1,0 +1,95 @@
+===============================================================================
+RELATÓRIO DA MISSÃO 02.1 — CORREÇÃO DO MODELO DE PNEUS E REGRAS DE PREÇO
+(Relatorio_5.txt)
+===============================================================================
+
+1. ALTERAÇÕES REALIZADAS NOS DOCUMENTOS:
+-------------------------------------------------------------------------------
+- 06_MODELO_DE_DADOS.md: Estabelecida a regra oficial do Registro Individual
+  Obrigatório do Pneu (tires), análise detalhada do Número de Fogo, cálculo exato
+  da idade do DOT por semana/ano no backend, e regras de preço configuradas via Dashboard.
+- 12_DECISOES_ARQUITETURAIS.md: Atualizado o registro ADR 12 (Registro Individual
+  Obrigatório de Pneus com Número de Fogo) e incluído o ADR 14 (Configuração de
+  Regras de Preço via Dashboard Administrativa com Snapshot Histórico).
+- 03_REGRAS_DE_NEGOCIO.md: Atualizada a regra de identificação individual do pneu,
+  validação do Número de Fogo, cálculo de idade do DOT pelo backend e responsabilidade
+  administrativa de precificação.
+- 07_FINANCEIRO.md: Detalhado o papel do Administrador como configurador de regras na
+  Dashboard, independência comercial total (Cliente vs Prestador) e snapshots imutáveis.
+- 10_ADMINISTRACAO_E_AUDITORIA.md: Especificado o escopo da Dashboard Administrativa
+  para gestão de preços e o protocolo de auditoria para alterações tarifárias.
+
+-------------------------------------------------------------------------------
+2. COMO FICOU A IDENTIDADE INDIVIDUAL DO PNEU:
+-------------------------------------------------------------------------------
+- REGRA OFICIAL DEFINITIVA: Cada pneu recolhido possui uma identidade física própria
+  e gera um registro individual no banco de dados (tires).
+- Eliminada qualquer menção de representar pneus coletados apenas por contagem agrupada.
+- Se uma coleta possui 250 pneus efetivamente embarcados, serão criados 250 registros
+  individuais em tires, cada um identificado por seu próprio UUIDv4 interno no sistema.
+- Relação com Quantidade Declarada: O cliente declara a intenção prévia (ex: 250 pneus).
+  Na conferência presencial, o prestador registra a contagem física e o sistema cria
+  exatamente 247 registros individuais para os pneus realmente recolhidos.
+
+-------------------------------------------------------------------------------
+3. COMO FICOU O TRATAMENTO DO NÚMERO DE FOGO:
+-------------------------------------------------------------------------------
+- Conceito: O Número de Fogo é a informação operacional crítica gravada fisicamente
+  a ferro quente na lateral de borracha do pneu.
+- Diferenciação de Identificadores:
+  * Número de Fogo: Identifica o pneu fisicamente no contexto operacional e de frota.
+  * UUIDv4: Identifica o registro do pneu na base de dados do sistema.
+- Unicidade e Repetição: O número de fogo identifica o pneu dentro do escopo do cliente/frota.
+  Entre clientes diferentes ou após remarcagens industriais, o número pode se repetir.
+  A chave primária única do banco é o UUIDv4 interno.
+- Tratamento de Ilegibilidade: Quando o pneu estiver com a marcação física desgastada/ilegível,
+  o sistema registra numero_fogo_ilegivel = TRUE, exigindo foto comprovatória e observação.
+- Tratamento de Duplicidade na Mesma Coleta: O backend FastAPI detecta a leitura do mesmo
+  número de fogo duas vezes na mesma coleta e aciona alerta de verificação.
+
+-------------------------------------------------------------------------------
+4. COMO FICOU O DOT (DEPARTMENT OF TRANSPORTATION):
+-------------------------------------------------------------------------------
+- Formato: 4 dígitos no padrão WWYY (WW = semana de fabricação 01-53; YY = ano).
+  Exemplo: 2520 = semana 25 de 2020.
+- DOT NÃO É UNIQUE: Vários pneus fabricados no mesmo lote compartilham o mesmo DOT.
+  Múltiplos pneus com o mesmo DOT podem ser cadastrados livremente, inclusive na mesma coleta.
+- Cálculo da Idade pelo Backend:
+  * O cálculo da idade NÃO é realizado apenas por Ano_Atual - Ano_DOT simplificado.
+  * O backend FastAPI calcula a idade precisa considerando a semana (WW) e ano (YY) do DOT.
+  * O Flutter apenas apresenta os resultados devidos pela API.
+- Alerta de Obsolescência: Pneus com idade calculada >= 7 anos acionam alerta_idade_obsoleto = TRUE
+  (badge visual vermelho), com limite configurável no backend pelo Administrador.
+
+-------------------------------------------------------------------------------
+5. COMO FICOU A REGRA DE PREÇOS E RESPONSABILIDADE:
+-------------------------------------------------------------------------------
+- Configuração na Dashboard Administrativa: As regras e tabelas de preços (price_rules)
+  são configuradas exclusivamente pelo usuário Administrador via Dashboard.
+- Papel do Administrador: O Administrador atua estritamente como configurador de regras.
+  O fato de o administrador cadastrar/alterar uma regra não significa que ela pertença ao
+  administrador como entidade comercial.
+- Independência Comercial Total: As condições financeiras do Cliente (ex: R$ 4,00/pneu) e
+  do Prestador (ex: R$ 2,50/pneu) são 100% desacopladas e independentes.
+
+-------------------------------------------------------------------------------
+6. COMO FICOU O SNAPSHOT FINANCEIRO:
+-------------------------------------------------------------------------------
+- Ao encerrar a coleta (FINALIZADA), o backend calcula os valores devidos e grava um
+  snapshot imutável em collections.snapshot_valor_prestador, collections.snapshot_valor_cliente
+  e na tabela financial_transactions.
+- Imutabilidade Retroativa: Alterações futuras na tabela de preços não afetam coletas
+  históricas já encerradas. Operações históricas NUNCA são recalculadas.
+- Auditoria de Preços: Toda alteração gera log imutável em audit_logs registrando admin
+  responsável, data/hora UTC, regra alterada, valor anterior, novo valor e justificativa.
+
+-------------------------------------------------------------------------------
+7. DECISÕES PENDENTES RESTANTES (DECISÃO PENDENTE):
+-------------------------------------------------------------------------------
+- Definição se a leitura duplicada do mesmo Número de Fogo na mesma coleta gerará bloqueio
+  rígido no backend ou se apenas exigirá confirmação presencial do prestador.
+- Definição da fórmula exata de conversão entre semana/ano do DOT e a idade decimal exata no backend.
+- Definição do formato padrão de máscara recomendada para números de fogo em frotas parceiras.
+- Definição da fórmula matemática e pesos percentuais exatos para reputação do prestador.
+- Definição do prazo máximo em dias para abertura de contestação formal pós-coleta pelo cliente.
+===============================================================================
