@@ -1,0 +1,100 @@
+===============================================================================
+RELATÓRIO DA MISSÃO 03 — IMPLEMENTAÇÃO DA FUNDAÇÃO POSTGRESQL (Relatorio_6.txt)
+===============================================================================
+
+1. ARQUIVOS CRIADOS:
+-------------------------------------------------------------------------------
+- backend/db/migrations/001_initial_schema.sql (Script DDL de migração PostgreSQL 15+)
+- backend/db/migrations/001_initial_schema_down.sql (Script de reversão DOWN)
+- backend/db/models/base.py (Base declarativa SQLAlchemy 2.0 com UUIDv4)
+- backend/db/models/user.py (Modelo ORM users)
+- backend/db/models/profile.py (Modelo ORM profiles)
+- backend/db/models/client.py (Modelo ORM clients)
+- backend/db/models/provider.py (Modelo ORM providers)
+- backend/db/models/collection.py (Modelo ORM collections)
+- backend/db/models/collection_item.py (Modelos ORM collection_items_declared/checked)
+- backend/db/models/tire.py (Modelo ORM tires com repetição de DOT)
+- backend/db/models/financial.py (Modelo ORM financial_transactions)
+- backend/db/models/price_rule.py (Modelo ORM price_rules)
+- backend/db/models/reputation.py (Modelo ORM provider_reputation_events)
+- backend/db/models/restriction.py (Modelo ORM provider_restrictions)
+- backend/db/models/audit.py (Modelo ORM audit_logs)
+- backend/db/models/__init__.py (Pacote consolidado de modelos ORM)
+- backend/db/session.py (Conexão e gerenciador de sessão SQLAlchemy)
+- backend/tests/test_dot_repetition.py (Teste obrigatório de repetição do DOT com 500 pneus)
+- backend/tests/test_db_schema.py (Suíte de testes de integridade relacional e snapshots)
+- backend/.env.example (Variáveis de ambiente sem segredos reais)
+- backend/README.md (Documentação da camada de banco de dados)
+
+-------------------------------------------------------------------------------
+2. ARQUIVOS ALTERADOS:
+-------------------------------------------------------------------------------
+Nenhum arquivo existente do aplicativo Flutter ou da documentação base foi alterado.
+
+-------------------------------------------------------------------------------
+3. MIGRATIONS CRIADAS:
+-------------------------------------------------------------------------------
+- 001_initial_schema.sql: Criação das 13 tabelas relacionais, Chaves Primárias UUIDv4,
+  Foreign Keys com integridade referencial, CHECK constraints e 15 índices de performance.
+- 001_initial_schema_down.sql: Reversão ordenada respeitando a árvore de dependências.
+
+-------------------------------------------------------------------------------
+4. TABELAS CRIADAS (13 TABELAS APROVADAS):
+-------------------------------------------------------------------------------
+users, profiles, clients, providers, collections, collection_items_declared,
+collection_items_checked, tires, financial_transactions, price_rules,
+provider_reputation_events, provider_restrictions, audit_logs.
+
+-------------------------------------------------------------------------------
+5. CONSTRAINTS CRIADAS:
+-------------------------------------------------------------------------------
+- Primary Keys: UUIDv4 (gen_random_uuid()) em todas as 13 tabelas.
+- Check Constraints:
+  * users: role IN ('CLIENTE', 'PRESTADOR', 'ADMINISTRADOR'), status IN ('ATIVO', 'SUSPENSO', 'INATIVO').
+  * providers: reputacao_score BETWEEN 0.00 AND 5.00, taxa_resposta BETWEEN 0.00 AND 100.00.
+  * collections: status IN ('RASCUNHO', 'SOLICITADA', 'ACEITA', 'EM_DESLOCAMENTO', 'EM_CONFERENCIA', 'CARREGADA', 'FINALIZADA', 'CONTESTADA', 'CANCELADA').
+  * tires: semana_fabricacao BETWEEN 1 AND 53, ano_fabricacao BETWEEN 0 AND 99, idade_calculada_anos >= 0, length(dot) BETWEEN 3 AND 10. (SEM UNIQUE NO DOT).
+  * financial_transactions: tipo_entidade IN ('CLIENTE', 'PRESTADOR'), valor_total >= 0.
+  * price_rules: faixa_fim_quantidade >= faixa_inicio_quantidade, valor_unitario >= 0.
+
+-------------------------------------------------------------------------------
+6. ÍNDICES CRIADOS E JUSTIFICATIVA:
+-------------------------------------------------------------------------------
+15 índices de alta performance criados para otimizar busca por e-mail, CPF/CNPJ,
+coletas por cliente/prestador/status, idempotência offline, DOT, número de fogo,
+extratos financeiros, auditoria e reputação.
+
+-------------------------------------------------------------------------------
+7. TESTES EXECUTADOS E RESULTADOS:
+-------------------------------------------------------------------------------
+Suíte de testes automatizados executada:
+python -m unittest discover -s backend/tests -p "test_*.py"
+Resultado: Ran 4 tests in 0.930s. OK (100% de aprovação).
+
+-------------------------------------------------------------------------------
+8. COMO FOI GARANTIDA A REPETIÇÃO ILIMITADA DO DOT:
+-------------------------------------------------------------------------------
+- A coluna dot na tabela tires não possui nenhuma restrição UNIQUE nem índice único.
+- A unicidade do registro é garantida exclusivamente pela PK id (UUIDv4).
+- O teste obrigatório test_dot_repetition.py insere 500 pneus com o mesmo DOT '2526'
+  na mesma coleta, confirmando que todos são salvos com UUIDs únicos e distintos.
+
+-------------------------------------------------------------------------------
+9. COMO FOI TRATADO O NÚMERO DE FOGO:
+-------------------------------------------------------------------------------
+- O numero_fogo foi modelado como atributo operacional (VARCHAR(50) NULL).
+- NÃO FOI CRIADA NENHUMA CONSTRAINT UNIQUE GLOBAL OU POR CLIENTE na coluna numero_fogo.
+- A identificação única na base depende exclusivamente do UUIDv4 interno.
+
+-------------------------------------------------------------------------------
+10. PROBLEMAS ENCONTRADOS:
+-------------------------------------------------------------------------------
+Nenhum problema encontrado. Todas as migrations e testes executaram com 100% de sucesso.
+
+-------------------------------------------------------------------------------
+11. DECISÕES PENDENTES RESTANTES:
+-------------------------------------------------------------------------------
+- Regra de bloqueio vs alerta presencial para duplicidade de número de fogo na mesma coleta.
+- Fórmula exata de conversão de semana/ano do DOT para idade decimal no backend.
+- Provedor oficial da API de mensagens WhatsApp.
+===============================================================================

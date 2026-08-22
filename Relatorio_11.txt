@@ -1,0 +1,113 @@
+===============================================================================
+RELATÓRIO DA MISSÃO 06 — AUTORIZAÇÃO E RBAC (Relatorio_11.txt)
+===============================================================================
+
+1. ARQUIVOS CRIADOS:
+-------------------------------------------------------------------------------
+- backend/app/rbac.py (mecanismo reutilizável require_roles(*roles) + router
+  com endpoints de teste GET /api/v1/rbac/test/client|provider|admin,
+  marcados como temporários no cabeçalho do módulo)
+- backend/tests/test_rbac.py (11 testes cobrindo os 12 cenários obrigatórios)
+- Relatorio_11.txt (este relatório — próximo número livre, nada sobrescrito)
+
+2. ARQUIVOS ALTERADOS:
+-------------------------------------------------------------------------------
+- backend/app/main.py (apenas include do router RBAC)
+- backend/README.md (árvore: rbac.py e test_rbac.py)
+- STATUS_DO_PROJETO.md (Missão 06 concluída; próxima 07; novas decisões
+  pendentes: ownership e revogação/refresh de tokens)
+
+3. DEPENDÊNCIAS ADICIONADAS:
+-------------------------------------------------------------------------------
+NENHUMA. FastAPI (Depends + HTTPException) e o código existente da Missão 05
+foram suficientes, conforme instruído pela missão.
+
+4. MECANISMO RBAC UTILIZADO:
+-------------------------------------------------------------------------------
+Fábrica de dependência FastAPI em backend/app/rbac.py:
+
+    require_roles("CLIENTE")            # papel exclusivo
+    require_roles("CLIENTE", "ADMINISTRADOR")   # papéis múltiplos (doc 04 §2:
+        # ex.: ADMIN também executa operações de cliente/prestador)
+
+Encadeamento: require_roles -> get_current_user (identidade, Missão 05) ->
+comparação da role CARREGADA DO BANCO (nunca do token nem do corpo da
+requisição) -> 403 se não autorizada.
+Reutilizável em qualquer router futuro: Depends(require_roles(...)).
+Sem hierarquia entre papéis; sem novos papéis; sem matriz complexa.
+
+5. ROLES IMPLEMENTADAS:
+-------------------------------------------------------------------------------
+CLIENTE, PRESTADOR, ADMINISTRADOR (exatamente as três oficiais, já
+restritas por CHECK constraint no banco desde a Missão 03).
+
+6. ENDPOINTS DE TESTE (temporários):
+-------------------------------------------------------------------------------
+- GET /api/v1/rbac/test/client    (somente CLIENTE)
+- GET /api/v1/rbac/test/provider  (somente PRESTADOR)
+- GET /api/v1/rbac/test/admin     (somente ADMINISTRADOR)
+Resposta mínima {"status":"ok","role":<role do banco>}; zero lógica de
+negócio; identificados como temporários no código e neste relatório.
+
+7. COMPORTAMENTO 401/403:
+-------------------------------------------------------------------------------
+- Não autenticado (sem token / token inválido / expirado / conta não-ATIVA):
+  401 Unauthorized, vindo da autenticação da Missão 05.
+- Autenticado sem permissão: 403 Forbidden ("Acesso negado para este
+  perfil."), SEM cabeçalho WWW-Authenticate (identidade já validada).
+- Autorizado: 200 OK.
+Nunca 401 para falta de permissão — verificado por teste explícito.
+
+8. TESTES EXECUTADOS:
+-------------------------------------------------------------------------------
+python -m unittest discover -s backend/tests -p "test_*.py"
+Cenários mapeados: cliente→cliente 200; prestador→prestador 200;
+admin→admin 200; cliente→admin 403; prestador→admin 403; cliente→prestador
+403; prestador→cliente 403; sem token 401; token inválido 401; role não
+autorizada 403; autorização independente de corpo/query (?role=... e JSON
+body {"role":...} ignorados na decisão); regressão total das Missões 03-05.
+
+9. RESULTADO DOS TESTES:
+-------------------------------------------------------------------------------
+OK — 34/34 aprovados (23 anteriores + 11 novos). Zero regressões.
+Obs.: usuário ADMINISTRADOR nos testes é inserido diretamente no banco
+(correto: o cadastro público bloqueia essa role por design da Missão 05).
+
+10. PROBLEMAS ENCONTRADOS:
+-------------------------------------------------------------------------------
+- TestClient.get() do httpx não aceita corpo JSON: corrigido no TESTE usando
+  client.request("GET", ...) — que é justamente o cenário sob teste
+  (requisição manual com corpo). Nenhuma alteração no código de produção.
+- Avaliação do JWT solicitada pela missão: formato atual coerente com
+  04_PERFIS_E_PERMISSOES.md §3.1 (sub + role + iat/exp, HS256). A role usada
+  na autorização vem do banco via get_current_user, não da claim do token —
+  portanto alteração de role no meio da validade do token é refletida
+  imediatamente no acesso. NENHUMA correção estrutural foi necessária.
+
+11. DECISÕES PENDENTES:
+-------------------------------------------------------------------------------
+- Ownership/isolamento de dados por ID (ex.: CLIENTE acessar coleta de outro
+  CLIENTE trocando UUID na URL): ESTRUTURA PRONTA — todo endpoint protegido
+  recebe o objeto User autenticado via dependência, permitindo filtrar
+  consultas pelo id do dono. Implementação dos controles fica para as
+  missões de cada domínio (registrada em STATUS_DO_PROJETO.md §8).
+- Revogação/logout e refresh tokens: JWT atual é stateless até expirar
+  (30 min). Doc 04 menciona refresh revogável — não implementado ainda
+  (nenhuma missão o solicitou). Registrado como pendência.
+- Endpoints /test do RBAC: remover ou manter como exemplo quando surgirem
+  os routers reais de cada perfil.
+
+12. CONFIRMAÇÃO DE QUE O FLUTTER NÃO FOI ALTERADO:
+-------------------------------------------------------------------------------
+CONFIRMADO via git status: nenhuma alteração fora de backend/, README do
+backend, STATUS_DO_PROJETO.md e Relatorio_11.txt.
+
+13. CONFIRMAÇÃO DE QUE NENHUMA FUNCIONALIDADE DE NEGÓCIO FOI ANTECIPADA:
+-------------------------------------------------------------------------------
+CONFIRMADO: sem Dashboard, CRUD de usuários/preços, financeiro, reputação,
+restrições, coleta, pneus, notificações, WhatsApp, 2FA, recuperação de senha,
+OAuth ou permissões granulares. Apenas o mecanismo de autorização e os três
+endpoints temporários de prova.
+
+NÃO foi iniciada a Missão 07.
+===============================================================================

@@ -1,0 +1,81 @@
+===============================================================================
+RELATÓRIO DA MISSÃO 03.5 — PREPARAÇÃO PARA CONTINUIDADE ENTRE MODELOS DE IA
+(Relatorio_7.txt)
+===============================================================================
+
+1. STATUS_DO_PROJETO.md FOI CRIADO?
+-------------------------------------------------------------------------------
+SIM. O arquivo não existia e foi criado na raiz do repositório:
+- STATUS_DO_PROJETO.md
+
+Conforme exigido pela missão, o arquivo contém SOMENTE informações resumidas
+e estáveis. Não substitui nem duplica os documentos base (01_ a 12_) nem os
+relatórios históricos (Relatorio.txt, Relatorio_2.txt a Relatorio_6.txt),
+que continuam sendo a documentação de referência e o histórico das missões.
+
+ -------------------------------------------------------------------------------
+2. CONTEÚDO RESUMIDO REGISTRADO NO STATUS_DO_PROJETO.md
+-------------------------------------------------------------------------------
+- Objetivo do projeto (coleta e gerenciamento de pneus com app Flutter e
+  backend FastAPI).
+- Arquitetura atual: Flutter/Dart -> REST/HTTPS -> FastAPI/Python 3.11+
+  (Pydantic v2 + SQLAlchemy) -> PostgreSQL 15+, conteinerizado via Docker,
+  sem dependências proprietárias do Render.
+- Tecnologias: Flutter/Dart, FastAPI, SQLAlchemy 2.0, Pydantic v2,
+  PostgreSQL 15+, unittest, Docker.
+- Missões concluídas: 01 (fundação Flutter), 02 (modelagem do domínio),
+  02.1 (identidade individual dos pneus e regras de preço), 03 (fundação
+  PostgreSQL) e 03.5 (esta missão).
+- Missão atual: nenhuma em execução.
+- Próxima missão: 04 — FastAPI + PostgreSQL.
+- Decisões críticas: resumo com apontamento para 12_DECISOES_ARQUITETURAIS.md
+  (UUID como identidade do pneu, DOT nunca único, snapshots financeiros).
+- Decisões pendentes: bloqueio vs alerta para duplicidade de número de fogo;
+  fórmula de conversão semana/ano do DOT; provedor oficial de WhatsApp.
+- As 20 regras críticas que NÃO podem ser quebradas, registradas
+  integralmente conforme especificado na missão.
+
+-------------------------------------------------------------------------------
+3. CONTRADIÇÕES ENCONTRADAS
+-------------------------------------------------------------------------------
+NENHUMA contradição foi encontrada entre o novo STATUS_DO_PROJETO.md e os
+documentos existentes:
+
+- Verificação de presença da documentação: AGENTS.md e todos os documentos
+  01_VISAO_DO_PRODUTO.md a 12_DECISOES_ARQUITETURAIS.md estão presentes na
+  raiz do repositório.
+- As missões registradas no STATUS_DO_PROJETO.md (01, 02, 02.1, 03, 04)
+  são consistentes com o histórico dos relatórios e com as fases do
+  11_ROADMAP.md (Missão 04 corresponde ao início da FASE 1/2 — backend
+  FastAPI conectado ao PostgreSQL).
+- As regras críticas registradas são consistentes com AGENTS.md,
+  03_REGRAS_DE_NEGOCIO.md e 06_MODELO_DE_DADOS.md (DOT repetível sem UNIQUE,
+  número de fogo operacional, perfis separados, snapshots financeiros).
+
+Não foi necessário escalar nenhuma contradição ao usuário.
+
+-------------------------------------------------------------------------------
+4. ARQUIVOS ALTERADOS
+-------------------------------------------------------------------------------
+Nenhum arquivo existente foi alterado. Conforme a missão:
+- Não houve modificação de banco de dados.
+- Não houve modificação no Flutter.
+- Não houve modificação no FastAPI.
+- Não foram criados endpoints nem autenticação.
+- Nenhuma dependência foi adicionada.
+
+-------------------------------------------------------------------------------
+5. ARQUIVOS CRIADOS
+-------------------------------------------------------------------------------
+- STATUS_DO_PROJETO.md (estado estável do projeto para continuidade entre
+  modelos de IA)
+- Relatorio_7.txt (este relatório)
+
+-------------------------------------------------------------------------------
+6. OBSERVAÇÕES FINAIS
+-------------------------------------------------------------------------------
+- Não foi criado nenhum sistema de documentação paralelo (sem arquivos como
+  contexto_ia.md ou memoria_ia.md). Apenas o STATUS_DO_PROJETO.md previsto
+  na missão foi criado.
+- A Missão 04 (FastAPI + PostgreSQL) NÃO foi iniciada, conforme instruído.
+===============================================================================

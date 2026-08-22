@@ -1,0 +1,97 @@
+# backend/app/auth.py
+from typing import Literal
+
+from fastapi import APIRouter, Depends, HTTPException
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from pydantic import BaseModel, EmailStr, Field, field_validator
+from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
+
+from backend.db import session as db_session
+from backend.db.models import User
+
+from . import security
+
+router = APIRouter(prefix="/api/v1/auth", tags=["auth"])
+
+bearer_scheme = HTTPBearer(auto_error=False)
+
+INVALID_CREDENTIALS = "Credenciais inválidas."
+
+
+class Credenciais(BaseModel):
+    email: EmailStr
+    senha: str = Field(min_length=1, max_length=128)
+
+    @field_validator("email")
+    @classmethod
+    def normalizar_email(cls, value: str) -> str:
+        return value.strip().lower()
+
+
+class RegistroRequest(Credenciais):
+    role: Literal["CLIENTE", "PRESTADOR"] = "CLIENTE"
+
+
+def _autenticar_ou_401(detail: str) -> HTTPException:
+    return HTTPException(
+        status_code=401,
+        detail=detail,
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+
+
+def get_current_user(
+    credentials: HTTPAuthorizationCredentials | None = Depends(bearer_scheme),
+) -> User:
+    if credentials is None:
+        raise _autenticar_ou_401("Não autenticado.")
+
+    payload = security.decode_access_token(credentials.credentials)
+    if payload is None:
+        raise _autenticar_ou_401("Token inválido ou expirado.")
+
+    with db_session.SessionLocal() as db:
+        user = db.get(User, payload.get("sub"))
+
+    if user is None or user.status != "ATIVO":
+        raise _autenticar_ou_401("Token inválido ou expirado.")
+    return user
+
+
+@router.post("/register", status_code=201)
+def register(data: RegistroRequest) -> dict:
+    with db_session.SessionLocal() as db:
+        existente = db.scalars(select(User).where(User.email == data.email)).first()
+        if existente is not None:
+            raise HTTPException(status_code=409, detail="E-mail já cadastrado.")
+
+        usuario = User(email=data.email, password_hash=security.hash_password(data.senha), role=data.role)
+        db.add(usuario)
+        try:
+            db.commit()
+        except IntegrityError:
+            db.rollback()
+            raise HTTPException(status_code=409, detail="E-mail já cadastrado.") from None
+        return {"id": usuario.id, "email": usuario.email, "role": usuario.role}
+
+
+@router.post("/login")
+def login(data: Credenciais) -> dict:
+    with db_session.SessionLocal() as db:
+        usuario = db.scalars(select(User).where(User.email == data.email)).first()
+
+    if usuario is None:
+        security.verify_password(data.senha, security.DUMMY_HASH)
+        raise _autenticar_ou_401(INVALID_CREDENTIALS)
+
+    if not security.verify_password(data.senha, usuario.password_hash):
+        raise _autenticar_ou_401(INVALID_CREDENTIALS)
+
+    token = security.create_access_token(usuario.id, usuario.role)
+    return {"access_token": token, "token_type": "bearer"}
+
+
+@router.get("/me")
+def me(usuario: User = Depends(get_current_user)) -> dict:
+    return {"id": usuario.id, "email": usuario.email, "role": usuario.role, "status": usuario.status}

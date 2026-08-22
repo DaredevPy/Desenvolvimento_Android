@@ -1,0 +1,129 @@
+===============================================================================
+RELATÓRIO DA MISSÃO 04 — FUNDAÇÃO FASTAPI + POSTGRESQL (Relatorio_8.txt)
+===============================================================================
+
+1. ARQUIVOS CRIADOS:
+-------------------------------------------------------------------------------
+- backend/app/__init__.py (pacote da aplicação FastAPI)
+- backend/app/main.py (aplicação FastAPI mínima com GET /health e GET /health/db)
+- backend/tests/test_app_health.py (testes dos endpoints /health e /health/db)
+- backend/requirements.txt (manifesto de dependências Python — não existia
+  nenhum controle de dependências no projeto)
+- Relatorio_8.txt (este relatório)
+
+Obs.: Relatorio_7.txt já existia (relatório da Missão 03.5) e foi preservado.
+
+2. ARQUIVOS ALTERADOS:
+-------------------------------------------------------------------------------
+- backend/README.md (estrutura atualizada com app/, novo arquivo de teste,
+  requirements.txt e seção "Execução da API")
+- STATUS_DO_PROJETO.md (Missão 04 registrada como concluída; próximas missões
+  atualizadas para Missão 05 a definir)
+- Nenhum outro arquivo foi alterado. Nenhuma documentação histórica de missões
+  foi modificada. Nenhuma regra de negócio, modelo financeiro, regra do DOT ou
+  do número de fogo foi tocada.
+
+3. DEPENDÊNCIAS ADICIONADAS:
+-------------------------------------------------------------------------------
+Criado backend/requirements.txt com as versões verificadas no ambiente:
+- fastapi==0.141.1 (framework da API)
+- uvicorn==0.52.3 (servidor ASGI para iniciar a aplicação)
+- SQLAlchemy==2.0.44 (já utilizada pela Missão 03; agora registrada no manifesto)
+- psycopg2-binary==2.9.12 (driver PostgreSQL exigido pelo dialeto
+  postgresql:// do SQLAlchemy em runtime)
+- httpx==0.28.1 (exigido pelo TestClient do FastAPI nos testes)
+Nenhuma outra biblioteca foi adicionada (sem pydantic-settings, python-dotenv,
+alembic, etc.). As variáveis de ambiente são lidas diretamente por os.getenv
+em backend/db/session.py, padrão já existente.
+
+4. ESTRUTURA FINAL DO BACKEND:
+-------------------------------------------------------------------------------
+backend/
+├── app/
+│   ├── __init__.py
+│   └── main.py              # FastAPI: /health e /health/db
+├── db/
+│   ├── migrations/          # 001_initial_schema.sql (+ down) — inalterados
+│   ├── models/              # Modelos ORM da Missão 03 — inalterados
+│   └── session.py           # Engine/SessionLocal — inalterado e reutilizado
+├── tests/
+│   ├── test_app_health.py   # Novo (4 testes)
+│   ├── test_db_schema.py    # Existente — inalterado
+│   └── test_dot_repetition.py  # Existente — inalterado
+├── requirements.txt         # Novo
+├── README.md                # Atualizado
+└── .env.example             # Mantido (placeholders, sem secrets)
+
+5. COMO A CONEXÃO POSTGRESQL FOI CONFIGURADA:
+-------------------------------------------------------------------------------
+- Reutilização TOTAL da fundação da Missão 03: backend/db/session.py continua
+  sendo a única fonte de conexão (engine + SessionLocal lidos de DATABASE_URL).
+- NÃO foi criada segunda conexão, segundo ORM nem sistema de configuração.
+- O endpoint /health/db acessa db_session.SessionLocal em tempo de chamada,
+  permitindo testes de indisponibilidade sem recarregar módulos.
+- Credenciais somente via variável de ambiente DATABASE_URL;
+  backend/.env.example mantido apenas com placeholders.
+- Consulta de verificação: constructo SQLAlchemy select(1), que executa
+  exatamente "SELECT 1". Optou-se por select(1) em vez de text("SELECT 1")
+  para respeitar 08_SEGURANCA.md §4.2 (proibição de SQL em texto cru),
+  sem prejuízo ao resultado mínimo exigido pela missão.
+
+6. RESULTADO DO /health:
+-------------------------------------------------------------------------------
+HTTP 200 — {"status": "ok"}
+Validado em teste automatizado e em smoke test com uvicorn real.
+
+7. RESULTADO DO /health/db:
+-------------------------------------------------------------------------------
+- Banco disponível: HTTP 200 — {"status": "ok", "database": "ok"}
+  (validado em teste automatizado e smoke test uvicorn com SQLite local)
+- Banco indisponível (driver psycopg2 apontando para host sem servidor):
+  HTTP 503 — {"status": "error", "database": "unavailable"}
+  Corpo sanitizado: SEM senha, SEM DATABASE_URL, SEM stack trace e SEM
+  informações internas (verificado por asserção nos testes).
+
+8. TESTES EXECUTADOS:
+-------------------------------------------------------------------------------
+python -m unittest discover -s backend/tests -p "test_*.py"
+Cobertura desta missão (backend/tests/test_app_health.py):
+1) /health retorna 200 {"status": "ok"}
+2) /health/db executa a consulta com banco disponível → 200
+3) /health/db com banco indisponível → 503 sem dados internos
+4) /health/db usando a sessão padrão da aplicação (fiação real) → 200
+
+9. RESULTADO DOS TESTES:
+-------------------------------------------------------------------------------
+OK — 8/8 testes aprovados (~0.8s), incluindo os 4 testes existentes da
+Missão 03 (schema relacional e repetição de DOT), que continuam passando.
+Smoke test adicional: uvicorn iniciou corretamente; /health e /health/db
+responderam via HTTP real (200/200; e 503 com PostgreSQL inacessível).
+
+10. PROBLEMAS ENCONTRADOS:
+-------------------------------------------------------------------------------
+a) Tensão entre a missão ("SELECT 1") e 08_SEGURANCA.md §4.2, que proíbe
+   SQL em texto cru. Resolvido sem contradição usando o constructo
+   SQLAlchemy select(1), que executa exatamente SELECT 1.
+b) Esta máquina não possui PostgreSQL local nem Docker: a execução do SELECT 1
+   contra um SERVIDOR PostgreSQL ativo não pôde ser demonstrada aqui.
+   O caminho do driver psycopg2 foi exercitado até a falha de conexão (503
+   correto). A validação final contra servidor real fica registrada abaixo.
+c) Aviso de deprecação interno da biblioteca starlette (httpx vs httpx2)
+   durante os testes: origem terceira, sem ação necessária nesta missão.
+
+11. DECISÕES PENDENTES:
+-------------------------------------------------------------------------------
+- Validar /health/db (SELECT 1 com HTTP 200) contra uma instância real de
+  PostgreSQL 15+ assim que houver ambiente disponível (Docker local ou Render).
+  Nenhuma decisão de código está bloqueada por isso.
+- Nenhuma decisão arquitetural nova foi inventada. Estrutura app/main.py
+  seguiu o especificado na missão e no 02_ARQUITETURA.md §4 (main.py na raiz
+  de app/; subpastas api/core/schemas/services ficarão para missões futuras,
+  quando surgir necessidade real).
+
+12. CONFIRMAÇÃO DE QUE O FLUTTER NÃO FOI ALTERADO:
+-------------------------------------------------------------------------------
+CONFIRMADO via git status: nenhuma alteração fora de backend/,
+backend/README.md e STATUS_DO_PROJETO.md. O diretório do app Flutter
+(meu_app_coleta_pneus/) permanece intacto. Firebase não foi removido.
+Nenhum deploy foi realizado. A Missão 05 NÃO foi iniciada.
+===============================================================================

@@ -1,0 +1,97 @@
+RELATÓRIO DA MISSÃO 07 — PERFIS OPERACIONAIS E OWNERSHIP
+(Relatorio_12.txt)
+
+1. ARQUIVOS CRIADOS:
+- backend/app/profiles.py — router /api/v1/profile com schemas Pydantic v2,
+  ownership via token e proteção RBAC.
+- backend/tests/test_profiles.py — suíte auto-suficiente (17 testes), sem
+  dependência de ordem de execução.
+
+2. ARQUIVOS ALTERADOS:
+- backend/app/main.py — inclusão de profiles_router.
+- backend/README.md — árvore atualizada (profiles.py, test_profiles.py).
+- STATUS_DO_PROJETO.md — Missão 07 concluída; próxima 08; decisões pendentes
+  adicionadas (item 11 abaixo).
+- Relatorio_12.txt (este relatório).
+
+3. ENDPOINTS CRIADOS (prefixo /api/v1/profile):
+- POST   /client   (201) — cria perfil CLIENTE + linha clients vinculada.
+- GET    /client   (200) — retorna o próprio perfil.
+- PUT    /client   (200) — atualização parcial (exclude_none).
+- POST   /provider (201) — cria perfil PRESTADOR + linha providers (com veículo).
+- GET    /provider (200) — retorna o próprio perfil (inclui veiculo).
+- PUT    /provider (200) — atualização parcial (campos base, pix e veículo).
+Erros: 401 sem token; 403 papel errado; 404 perfil inexistente; 409 duplicado;
+422 validação/campos extras.
+
+4. TABELAS UTILIZADAS (nenhuma migration nova — estrutura existente):
+- users (identidade/role, somente leitura aqui)
+- profiles (dados comuns; UNIQUE user_id e cpf_cnpj)
+- clients (linha 1:1 criada junto do perfil CLIENTE)
+- providers (linha 1:1 criada junto do perfil PRESTADOR; dados_veiculo_json)
+
+5. VALIDAÇÕES IMPLEMENTADAS NO BACKEND:
+- Schemas com ConfigDict(extra="forbid") — campo desconhecido ou "user_id" no
+  corpo => 422 (impossível forjar ownership pelo payload).
+- cpf_cnpj normalizado para dígitos; aceito apenas 11 ou 14 dígitos.
+- telefone obrigatório, 8–20 caracteres; nome_razao_social 3–200.
+- chave_pix opcional (<=140); dados_veiculo_json objeto JSON livre (placa/tipo).
+- reputacao_score, taxa_resposta e status_operacional NÃO são aceitos no
+  payload — continuam default do banco (5.00 / 100.00 / DISPONIVEL).
+
+6. MECANISMO DE OWNERSHIP:
+- O usuário é sempre obtido do token (get_current_user via require_roles);
+  o perfil localizado é SEMPRE profiles.user_id == usuario.id do token.
+- Nenhum id chega por URL, query ou corpo. Query ?user_id= é ignorada
+  (testada: resposta contém os próprios dados do chamador).
+
+7. RBAC:
+- Rotas /client exigem role CLIENTE; rotas /provider exigem PRESTADOR
+  (require_roles da Missão 06). Papel cruzado => 403 sem header
+  WWW-Authenticate (semântica mantida).
+
+8. DADOS SENSÍVEIS:
+- Respostas nunca incluem senha/senha_hash/id internos do auth.
+- O dono visualiza os próprios CPF/CNPJ e Pix completos. Mascaramento para
+  exibição a terceiros ficou como DECISÃO PENDENTE (não existe hoje endpoint
+  que exponha perfil de outro usuário).
+
+9. DEPENDÊNCIAS ADICIONAIS: NENHUMA (requirements.txt inalterado).
+
+10. TESTES EXECUTADOS E RESULTADO:
+- python -m unittest discover -s backend/tests -p "test_*.py"
+- Resultado final: Ran 51 tests — OK (34 anteriores + 17 novos).
+- Cenários da missão cobertos: criação/leitura/atualização dos dois perfis,
+  RBAC cruzado 403, não autenticado 401, alteração alheia bloqueada,
+  user_id no corpo 422, user_id na query ignorado, dados inválidos 422,
+  respostas sem vazamento de credenciais, POST duplicado 409,
+  cpf_cnpj único entre usuários 409, GET/PUT sem perfil 404.
+
+11. PROBLEMAS ENCONTRADOS E CORREÇÕES:
+- BUG REAL corrigido em criar/atualizar prestador: dados_veiculo_json pertence
+  à tabela providers (e não a profiles). Payload agora é dividido: campos base
+  + pix em profiles; veículo na linha providers. GET/PUT retornam o veículo
+  lendo da tabela correta.
+- BUG REAL corrigido nos dois POSTs: db.flush() estava fora do try — violação
+  de UNIQUE (cpf_cnpj/user_id) estourava 500 em vez de 409. Unidade de trabalho
+  inteira agora protegida por except IntegrityError => rollback + 409.
+- Suíte reescrita para ser auto-suficiente (cada teste registra seus usuários e
+  gera cpf_cnpj sequencial único): unittest executa métodos em ordem
+  alfabética e os dados compartilhados causavam colisões de UNIQUE mascaradas.
+
+12. DECISÕES PENDENTES REGISTRADAS EM STATUS_DO_PROJETO.md (seção 8):
+- Política de mascaramento de CPF/CNPJ/Pix ao exibir perfil a terceiros.
+- Formato/política de validação de telefone (atual: 8–20 caracteres crus).
+
+13. CONFIRMAÇÃO — FLUTTER INTOUCADO:
+- git status --short -- meu_app_coleta_pneus => vazio (nenhuma alteração).
+
+14. CONFIRMAÇÃO — NENHUMA COLETA IMPLEMENTADA:
+- Nenhuma funcionalidade de coleta foi criada nesta missão.
+
+15. CONFIRMAÇÃO — CÓDIGO ENXUTO:
+- Nenhuma dependência nova, nenhuma abstração extra; helpers apenas os
+  utilizados (_perfil_do_usuario, _resposta_base, _resposta_prestador,
+  _aplicar_atualizacao). Sem imports não utilizados.
+
+16. PRÓXIMA MISSÃO: 08 — NÃO INICIADA.

@@ -1,0 +1,143 @@
+===============================================================================
+RELATÓRIO DA MISSÃO 05 — AUTENTICAÇÃO E IDENTIDADE DO USUÁRIO
+(Relatorio_10.txt)
+===============================================================================
+
+AVISO DE CONFLITO DE NUMERAÇÃO:
+A missão especificava criar "Relatorio_9.txt". Porém esse arquivo já estava
+ocupado pelas diretrizes de MODO DE ATUAÇÃO solicitadas explicitamente pelo
+usuário (registro anterior à missão). Para não destruir conteúdo pedido,
+este relatório usa o próximo número livre: Relatorio_10.txt. STATUS_DO_
+PROJETO.md §6.1 documenta a convenção. Nenhum arquivo foi sobrescrito.
+
+1. ARQUIVOS CRIADOS:
+-------------------------------------------------------------------------------
+- backend/app/security.py (hash Argon2id + criação/validação de JWT HS256)
+- backend/app/auth.py (rotas /api/v1/auth/register, /login, /me + dependência
+  get_current_user)
+- backend/tests/test_auth.py (15 testes cobrindo os 12 cenários obrigatórios)
+- Relatorio_10.txt (este relatório)
+
+2. ARQUIVOS ALTERADOS:
+-------------------------------------------------------------------------------
+- backend/app/main.py (apenas include do router de autenticação)
+- backend/.env.example (adicionados placeholders SECRET_KEY e
+  ACCESS_TOKEN_EXPIRE_MINUTES, com instrução de geração segura)
+- backend/requirements.txt (3 dependências pinadas — ver item 3)
+- backend/README.md (estrutura + exigência de SECRET_KEY na execução)
+- STATUS_DO_PROJETO.md (Missão 05 concluída, próxima 06, novas decisões
+  pendentes, nota sobre numeração de relatórios)
+
+3. DEPENDÊNCIAS ADICIONADAS:
+-------------------------------------------------------------------------------
+- argon2-cffi==25.1.0 (hashing de senha Argon2id)
+- PyJWT==2.13.0 (emissão/validação JWT HS256)
+- email-validator==2.3.0 (validação real de e-mail pelo EmailStr/Pydantic)
+Verificação prévia: nenhuma solução equivalente existia no projeto
+(passlib/bcrypt/jose não instalados). Escolhas diretas, sem wrappers.
+
+4. ALGORITMO DE HASH UTILIZADO:
+-------------------------------------------------------------------------------
+Argon2id (primeira recomendação de 08_SEGURANCA.md §3), via PasswordHasher do
+argon2-cffi com parâmetros padrão da biblioteca (alinhados a OWASP), sal
+único gerado automaticamente por hash. Verificação em tempo constante pela
+própria biblioteca. Proibidos e ausentes: MD5, SHA-1, SHA-256 puro.
+Nenhuma senha é logada em nenhum ponto do código.
+
+5. ESTRATÉGIA DE AUTENTICAÇÃO UTILIZADA:
+-------------------------------------------------------------------------------
+Fluxo exatamente como especificado: credenciais -> validação de entrada
+(Pydantic) -> busca do usuário por e-mail normalizado (lowercase/strip) ->
+verificação do hash -> emissão do token.
+Anti-enumeração dupla:
+a) Mensagem idêntica "Credenciais inválidas." para usuário inexistente e
+   senha incorreta (testada por comparação dos corpos);
+b) Equalização de tempo: quando o usuário não existe, um hash dummy é
+   verificado antes do 401, evitando oracle de tempo.
+Contas com status != ATIVO são rejeitadas em rotas protegidas (doc 04 §3.1).
+
+6. ESTRUTURA DO TOKEN:
+-------------------------------------------------------------------------------
+JWT HS256 (assinatura via SECRET_KEY de ambiente), payload mínimo conforme
+04_PERFIS_E_PERMISSOES.md §3.1:
+{ "sub": <UUID do usuário>, "role": <CLIENTE|PRESTADOR|ADMINISTRADOR>,
+  "iat": <emitido em>, "exp": <+ACCESS_TOKEN_EXPIRE_MINUTES, padrão 30> }
+Não contém: senha, hash, CPF/CNPJ, chave Pix ou qualquer dado financeiro.
+A role vai no token por definição documentada, mas NENHUMA autorização a
+utiliza nesta missão (ver item 13).
+
+7. ENDPOINTS CRIADOS:
+-------------------------------------------------------------------------------
+- POST /api/v1/auth/register -> 201 {id,email,role}; 409 duplicado;
+  422 entrada inválida. Cadastro público aceita somente CLIENTE/PRESTADOR
+  (autoatribuição de ADMINISTRADOR é rejeitada com 422).
+- POST /api/v1/auth/login    -> 200 {access_token, token_type:"bearer"};
+  401 genérico com cabeçalho WWW-Authenticate.
+- GET  /api/v1/auth/me       -> 200 {id,email,role,status}; 401 sem token,
+  token inválido, expirado, assinado com chave errada, usuário removido ou
+  conta não-ATIVA.
+Nota de rota: a missão exemplificava "/auth/me" como conceitual; o prefixo
+/api/v1 segue 04_PERFIS_E_PERMISSOES.md §3.1 (rota oficial de login).
+
+8. TESTES EXECUTADOS:
+-------------------------------------------------------------------------------
+python -m unittest discover -s backend/tests -p "test_*.py"
+backend/tests/test_auth.py cobre: registro válido; role padrão CLIENTE;
+senha nunca em texto puro; armazenamento como $argon2id$; login válido;
+senha inválida; usuário inexistente com mensagem IDÊNTICA à senha inválida;
+conteúdo do token (sub/role); ausência de token; token inválido; /auth/me
+autenticado; token com chave errada e expirado; e-mail duplicado (409);
+extras: ADMINISTRADOR rejeitado no cadastro público (422) e e-mail
+malformado rejeitado (422).
+
+9. RESULTADO DOS TESTES:
+-------------------------------------------------------------------------------
+OK — 23/23 testes aprovados (15 novos + 8 existentes das Missões 03/04,
+sem regressões).
+Smoke test HTTP real (uvicorn): register 201 -> login 200 (token emitido) ->
+/me 200 com dados corretos -> sem token 401 -> token falso 401 ->
+duplicado 409 -> senha errada 401.
+
+10. COMO OS SECRETS FORAM PROTEGIDOS:
+-------------------------------------------------------------------------------
+- SECRET_KEY lida exclusivamente de variável de ambiente, sob demanda
+  (lazy): ausência causa erro explícito ao usar auth — sem default
+  inseguro e sem afetar /health.
+- .env.example contém apenas placeholder + comando seguro de geração
+  (secrets.token_urlsafe(64)).
+- Nenhum secret real no código, nos testes ou no Git.
+- Alerta do PyJWT sobre chaves HMAC < 32 bytes tratado: segredos de teste
+  com comprimento adequado; orientação refletida no .env.example.
+
+11. DECISÕES PENDENTES:
+-------------------------------------------------------------------------------
+- Política formal de senha (comprimento mínimo, complexidade, rotação):
+  não definida na documentação; implementado somente saneamento mínimo
+  (obrigatória, 1–128 caracteres) conforme instrução da missão.
+- Processo de provisionamento de ADMINISTRADOR (não existe bootstrap;
+  cadastro público bloqueado para essa role).
+Ambas registradas também em STATUS_DO_PROJETO.md §8.
+
+12. CONFIRMAÇÃO DE QUE O FLUTTER NÃO FOI ALTERADO:
+-------------------------------------------------------------------------------
+CONFIRMADO via git status: nenhuma alteração fora de backend/, README do
+backend e STATUS_DO_PROJETO.md. Diretório meu_app_coleta_pneus/ intacto.
+
+13. CONFIRMAÇÃO DE QUE O RBAC NÃO FOI IMPLEMENTADO:
+-------------------------------------------------------------------------------
+CONFIRMADO: nenhuma verificação de permissão por papel existe nos endpoints;
+não há "if role == ..."; a role é apenas armazenada/carregada. A única
+restrição relacionada é de ENTRADA no cadastro público (impedir
+autoatribuição de ADMINISTRADOR), medida de segurança de identidade, não de
+autorização. Autorização/RBAC permanece para missão futura.
+
+PROBLEMAS ENCONTRADOS DURANTE A MISSÃO:
+-------------------------------------------------------------------------------
+- Smoke inicial retornou 500: diagnóstico mostrou "no such table: users" —
+  banco SQLite novo sem schema. Comportamento esperado: tabelas provêm de
+  migrations/init_db. Não era defeito do código de auth; smoke repetido
+  após aplicar schema e aprovou integralmente.
+- Conflito de nome de relatório resolvido conforme AVISO no topo.
+
+NÃO foi iniciada a Missão 06.
+===============================================================================
