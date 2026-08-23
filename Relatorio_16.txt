@@ -1,0 +1,112 @@
+RELATÓRIO DA MISSÃO 10 — FINANCEIRO, PRECIFICAÇÃO E SNAPSHOT IMUTÁVEL
+(Relatorio_16.txt)
+
+1. ARQUIVOS CRIADOS:
+- backend/app/pricing.py — fundação financeira (regras de preço ADMIN +
+  fechamento com snapshot).
+- backend/tests/test_financeiro.py — suíte com 17 testes (banco isolado por
+  teste, pois price_rules é global e a validação de sobreposição impediria
+  faixas de testes distintos conviverem na mesma base).
+- Relatorio_16.txt (este relatório).
+
+2. ARQUIVOS ALTERADOS:
+- backend/app/main.py — registro do router pricing.
+- backend/README.md, STATUS_DO_PROJETO.md — árvore, missão 10, decisões,
+  pendências.
+
+3. ENDPOINTS CRIADOS:
+- POST   /api/v1/admin/pricing-rules          (ADMIN; 201; audita criação)
+- PATCH  /api/v1/admin/pricing-rules/{id}     (ADMIN; exige justificativa;
+  audita valor anterior/novo)
+- POST   /api/v1/collections/{id}/finalizar   (PRESTADOR atribuído; corpo
+  vazio obrigatório; único caminho para FINALIZADA)
+
+4. PRICE_RULES (docs 07 §2, 10 §§2-3):
+- Só ADMINISTRADOR cria/altera (require_roles); CLIENTE/PRESTADOR => 403.
+- perfil_alvo distingue regra comercial do CLIENTE vs PRESTADOR.
+- Faixa de quantidade + valor unitário + vigência; valores negativos =>
+  422 (Pydantic ge=0; CHECK do banco preservado); faixas inválidas => 422.
+- Sobreposição de faixas ATIVAS do mesmo perfil com vigências que se
+  cruzam => 409 (ambiguidade de cálculo impossível). Regras desativadas
+  não bloqueiam novas faixas. Sem DELETE: desativação por ativo=false
+  preserva histórico utilizado por coletas antigas.
+- Toda criação/alteração grava AuditLog (user admin, entidade price_rules,
+  valor_anterior_json/valor_novo_json incluindo justificativa, ip_origem,
+  UTC).
+
+5. FECHAMENTO FINANCEIRO (docs 03 §4, 06 §5.1.2, 07 §3):
+- Estado exigido: CARREGADA; posse via _coleta_do_provider com FOR UPDATE.
+- Quantidade = COUNT(tires) (registros individuais), nunca a declarada.
+- Regra aplicável por lado: ativa, faixa contém a quantidade, vigência na
+  data de hoje. Faltante => 409 nomeando CLIENTE ou PRESTADOR, sem
+  persistir nada.
+- Cálculo Decimal com ROUND_HALF_UP, 2 casas; cliente e prestador
+  calculados separadamente (independência comercial).
+- Snapshot imutável em collections.snapshot_valor_cliente/prestador +
+  data_finalizacao; dois FinancialTransaction independentes (tipo_entidade
+  CLIENTE/PRESTADOR, perfil_id = profiles.id de cada parte, PENDENTE);
+  transição para FINALIZADA; tudo num único commit (atômico).
+- Corpo da requisição: modelo vazio extra=forbid — nenhum valor/ID
+  financeiro é aceito do Flutter.
+
+6. IMUTABILIDADE PÓS-FECHAMENTO:
+- Re-finalizar => 409 (estado FINALIZADA); mudar estado depois => 409
+  (mapa TRANSICOES_VALIDAS não sai de FINALIZADA nesta missão); alterar
+  price_rules depois não muda snapshots/lançamentos (provado em teste).
+
+7. TESTES (17) x lista obrigatória da missão:
+1→test_01; 2→test_02; 3→test_03; 4→test_04; 5→test_05;
+6→test_06 (criação e alteração negativas);
+7→test_07 (fim<inicio, sobreposição mesmo perfil 409, perfis diferentes
+permitido, faixas disjuntas permitido);
+8→test_08 (R$4,00 vs R$2,50 x 3 pneus = 12,00 / 7,50);
+9 e 10→test_09 (declarada 250, coletados 3 => usa 3; snapshot != 1000,00);
+11→test_10 (snapshots + data_finalizacao na collections);
+12→test_11 (2 lançamentos desacoplados, perfil_id corretos, PENDENTE);
+13→test_12 (PATCH pós-fechamento não altera histórico);
+14→test_13 (re-finalizar 409; mudança de estado rejeitada; corpo forjado
+422);
+15→test_14 (falta regra PRESTADOR => 409 e NADA persistido);
+16→test_16 (campos financeiros/IDs no payload => 422);
+17→test_15 (faixa 100-1000 com 3 pneus => 409 sem gravar) e test_14;
+extra→test_17 (prestador alheio 404 uniforme; cliente 403).
+Regressão completa (item 18): python -m unittest discover -s
+backend/tests -p "test_*.py" => Ran 111 tests — OK (94 anteriores + 17).
+
+8. PROBLEMAS ENCONTRADOS:
+- Falhas iniciais no PRÓPRIO helper de teste (concluir com divergência sem
+  evidência quando registrados != declarada) — corrigido com justificativa/
+  foto no helper; produção correta desde o início.
+- Banco compartilhado entre testes da classe quebraria a validação de
+  sobreposição global de faixas — suíte nova isola o banco por teste
+  (setUp/tearDown), mantendo o padrão das demais suítes intocado.
+
+9. DECISÕES TOMADAS:
+- Único caminho para FINALIZADA é /finalizar: a rota genérica /status já
+  restringe os literais do payload (Literal sem FINALIZADA), então nenhum
+  conflito com TRANSICOES_VALIDAS — documentado no STATUS §7.
+- Auditoria de preço guarda a justificativa dentro de valor_novo_json
+  (AuditLog não possui coluna própria para isso; doc 10 §3.1 atendido).
+- PATCH aceita limpar vigencia_fim (None explícito via model_fields_set).
+- Sobreposição considera apenas regras ativas; histórico desativado nunca
+  bloqueia.
+- data_vencimento dos lançamentos = data do fechamento (política de prazo
+  é pendência registrada; cobrança/Pix fora do escopo).
+
+10. CONFLITOS DOCUMENTAIS: nenhum silencioso. Doc 07 §3 diz "no exato
+instante em que transita para FINALIZADA" — implementado literalmente
+(cálculo+snapshot+lancamentos+transição na mesma operação).
+
+11. PENDÊNCIAS ADICIONADAS AO STATUS §8: política de data_vencimento;
+endpoint de consulta/estimativa de valores para o app (doc 05 Etapa 2).
+
+12. CONFIRMAÇÃO — FLUTTER NÃO ALTERADO: git status -- meu_app_coleta_pneus
+vazio.
+
+13. CONFIRMAÇÃO — REGRAS CRÍTICAS PRESERVADAS: backend autoridade total do
+cálculo; independência comercial cliente/prestador; snapshots imutáveis;
+sem gateway/PIX/pagamentos/reputação/WhatsApp; nenhuma migration alterada;
+Argon2id/JWT/RBAC intactos; código enxuto (sem dependências novas, sem
+abstrações genéricas, sem rota de listagem desnecessária).
+
+14. PRÓXIMA MISSÃO: 11 — NÃO INICIADA.

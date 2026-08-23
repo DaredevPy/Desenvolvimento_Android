@@ -1,0 +1,104 @@
+RELATÓRIO DA MISSÃO 12 — IDEMPOTÊNCIA E OPERAÇÃO OFFLINE DA COLETA
+(Relatorio_18.txt)
+
+1. ARQUIVOS CRIADOS:
+- backend/db/migrations/002_idempotencia_coleta.sql (UP).
+- backend/db/migrations/002_idempotencia_coleta_down.sql (DOWN).
+- backend/tests/test_idempotencia.py — suíte com 12 testes.
+- Relatorio_18.txt (este relatório).
+
+2. ARQUIVOS ALTERADOS:
+- backend/db/models/collection.py — campos idempotency_request_hash
+  (String 64) e idempotency_response_json (JSON), ambos nulos.
+- backend/app/collections.py — POST /api/v1/collections integrado à
+  idempotência (header X-Idempotency-Key).
+- backend/README.md, STATUS_DO_PROJETO.md — árvore, missão 12, decisões,
+  pendência consumida e novas pendências.
+
+3. ESTRATÉGIA DE IDEMPOTÊNCIA (doc 09 §4.1 seguido literalmente):
+- O app gera UUIDv4 localmente e envia no cabeçalho X-Idempotency-Key
+  (opcional até o outbox do Flutter existir; inválido/não-v4 => 422).
+- Primeiro processamento: grava a coleta com idempotency_key (UNIQUE já
+  definido na migration 001: uq_collections_idempotency),
+  idempotency_request_hash = SHA-256 do payload validado
+  (model_dump_json) e idempotency_response_json = corpo da resposta;
+  retorna HTTP 201.
+- Replay da MESMA operação: NÃO re-executa; devolve exatamente a resposta
+  armazenada com HTTP 200 (mesmo que o estado atual da coleta tenha
+  avançado — provado em teste).
+- Mesma chave com payload diferente => 409 definitivo (nada é criado).
+- Chave usada por OUTRO usuário => 404 uniforme "Recurso não encontrado."
+  (anti-enumeração; a identidade vem SEMPRE do JWT, nunca do cliente).
+
+4. PROTEÇÃO DE CONCORRÊNCIA:
+- Dois requests simultâneos com a mesma chave passam pelo mesmo SELECT de
+  verificação, mas quem perder a corrida de INSERT recebe IntegrityError
+  do UNIQUE no BANCO; o endpoint faz rollback e cai no fallback de replay
+  (_replay_idempotente), devolvendo 200 com a resposta do vencedor.
+  Determinismo garantido pelo PostgreSQL (constraint + transação), não por
+  lógica Python frágil. Fallback só ativa com chave presente (chave None
+  re-relança o erro original).
+- Teste de corrida usa threads + barreira sobre sqlite em ARQUIVO com
+  NullPool (uma conexão por requisição, semântica próxima ao PostgreSQL);
+  resultado provado: exatamente 1 coleta persistida.
+
+5. ESCOPO RESPEITADO:
+- Idempotência integrada SOMENTE à criação de coletas (ponto prioritário
+  citado na missão e na pendência do STATUS). Doc 09 §2 lista outras
+  operações offline, mas não as define como obrigatórias nesta etapa;
+  extensão registrada como pendência (conferência/finalização quando o
+  outbox for ativado). Zero abstrações genéricas: helpers têm consumidor
+  único e real.
+
+6. TESTES (12) x lista obrigatória:
+1→test_01; 2→test_02; 3→test_03; 4→test_03; 5→test_06 (threads+barreira);
+6→test_04; 7→test_07 (payload inválido => 422 sem registro parcial e chave
+não consumida); 8→test_07 (recuperação com a mesma chave => 201);
+9→test_10 (coleta alheia 404); 10→test_10 (PRESTADOR cria coleta => 403);
+11→test_11 (dois pneus DOT 2526 na mesma coleta => 201); 12→test_12
+(NF duplicado => 409 e zero pneus gravados).
+Extras: test_05 (chave inválida/não-v4 => 422); test_08 (fluxo sem header
+intacto, colunas nulas); test_09 (replay devolve resposta EXATA armazenada
+— status SOLICITADA — enquanto o banco já está ACEITA).
+13 (regressão)=> suíte completa.
+
+7. RESULTADO TOTAL: python -m unittest discover -s backend/tests -p
+"test_*.py" => Ran 138 tests — OK (126 anteriores + 12 novos). Zero
+regressões.
+
+8. PROBLEMAS ENCONTRADOS:
+- No PRÓPRIO código novo: fallback de corrida consultava com chave None
+  (casaria IS NULL) — corrigido antes do primeiro teste verde; gravação de
+  hash sem chave — corrigido para manter colunas nulas no fluxo antigo;
+  indentação danificada em _coleta_do_provider durante edição — corrigida.
+- Nos testes: sequência de CPF com 15 dígitos; data_agendada gerada a cada
+  chamada mudava o hash do payload (retries reais reenviam bytes idênticos
+  — timestamp congelado no setUp); StaticPool compartilhava UMA conexão
+  sqlite entre threads (trocado por arquivo + NullPool); TestClient não é
+  thread-safe (cliente próprio por thread); delete() do TestClient sem json.
+
+9. DECISÕES TÉCNICAS:
+- Hash SHA-256 do payload validado (model_dump_json determinístico) em
+  coluna própria; resposta armazenada em JSONB para replay byte-a-byte
+  conforme doc 09 ("exatamente a resposta armazenada").
+- Chave permanece opcional na criação: cadastro público atual e suítes
+  anteriores não enviam header; obrigatoriedade fica para quando o outbox
+  existir (pendência registrada).
+- Nenhuma dependência nova; nenhum SQL textual cru; migration nova (002)
+  sem tocar a 001.
+
+10. PENDÊNCIAS (STATUS §8): estender idempotência aos demais pontos offline
+e tornar X-Idempotency-Key obrigatório nos fluxos outbox. Pendências
+pré-existentes inalteradas.
+
+11. REGRAS CRÍTICAS CONFIRMADAS:
+- DOT continua podendo repetir ilimitadamente (provado: 2x DOT 2526 na
+  mesma coleta => 201); idempotência NÃO virou substituto de UNIQUE.
+- Número de fogo duplicado na MESMA coleta segue BLOQUEIO DEFINITIVO
+  (409, zero registros parciais); sem UNIQUE global criado.
+- Financeiro/JWT/RBAC/ownership intocados; histórico preservado; migrations
+  anteriores intactas.
+
+12. FLUTTER NÃO ALTERADO: git status -- meu_app_coleta_pneus vazio.
+
+13. MISSÃO 13 NÃO INICIADA.

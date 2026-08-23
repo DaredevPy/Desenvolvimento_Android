@@ -1,0 +1,128 @@
+RELATÓRIO DA MISSÃO 08 — DOMÍNIO DE COLETAS: CICLO DE VIDA, MÁQUINA DE ESTADOS E ACEITE CONCORRENTE
+(Relatorio_14.txt)
+
+1. ARQUIVOS CRIADOS:
+- backend/app/collections.py — router /api/v1/collections (schemas Pydantic v2,
+  máquina de estados, ownership e aceite concorrente).
+- backend/tests/test_collections.py — suíte auto-suficiente com 17 testes.
+- Relatorio_14.txt (este relatório).
+
+2. ARQUIVOS ALTERADOS:
+- backend/app/main.py — inclusão do collections_router.
+- backend/README.md — árvore atualizada (collections.py, ownership.py,
+  test_ownership.py, test_collections.py).
+- STATUS_DO_PROJETO.md — Missão 08 registrada; pendências atualizadas/adicionadas.
+- Relatorio_14.txt (este relatório).
+
+3. ENDPOINTS CRIADOS (prefixo /api/v1/collections):
+- POST  ""                        (201) — cria solicitação (CLIENTE). Status inicial SOLICITADA.
+- GET   ""                        (200) — lista as próprias coletas (CLIENTE: como cliente;
+                                          PRESTADOR: como prestador atribuído).
+- GET   "/disponiveis"            (200) — coletas SOLICITADA sem prestador (PRESTADOR).
+- GET   "/{coleta_id}"            (200) — detalhe da própria coleta (CLIENTE dono).
+- POST  "/{coleta_id}/aceitar"    (200) — aceite (PRESTADOR), transição atômica
+                                          SOLICITADA -> ACEITA; perdedor da corrida recebe 409.
+- POST  "/{coleta_id}/cancelar"   (200) — cancelamento pelo dono, somente a partir de
+                                          SOLICITADA (doc 05); alheio/inexistente => 404 uniforme.
+- POST  "/{coleta_id}/status"     (200) — avanço do prestador atribuído dentro do conjunto
+                                          EM_DESLOCAMENTO / EM_CONFERENCIA / CARREGADA,
+                                          validado contra o mapa de adjacência.
+Erros: 401 sem token; 403 papel errado; 404 inexistente/alheio (corpo idêntico,
+anti-enumeração) e perfil ausente; 409 estado/posse inválidos; 422 validação.
+
+4. IDENTIDADE E OWNERSHIP:
+- client_id e provider_id NUNCA vêm do corpo/URL/query: obtidos por join
+  profiles.user_id == usuario.id do token (fundação Missões 05/06/07).
+- Schemas com ConfigDict(extra="forbid"): client_id, provider_id, status,
+  snapshot_valor_*, idempotency_key no corpo => 422.
+- Detalhe/cancelamento: coleta inexistente e coleta alheia retornam o MESMO 404
+  (mesma constante), sem dados do recurso na resposta.
+- Avanço de status: coleta não atribuída ao prestador do token => mesmo 404 de
+  inexistente; status final confirmado por UPDATE condicional no banco.
+
+5. MÁQUINA DE ESTADOS:
+- TRANSICOES_VALIDAS registra o grafo completo do doc 05 (RASCUNHO->SOLICITADA;
+  SOLICITADA->ACEITA/CANCELADA; ACEITA->EM_DESLOCAMENTO/CANCELADA;
+  EM_DESLOCAMENTO->EM_CONFERENCIA; EM_CONFERENCIA->CARREGADA;
+  CARREGADA->FINALIZADA; FINALIZADA->CONTESTADA).
+- Exposto nesta missão: ACEITAR, CANCELAR (dono, só SOLICITADA) e avanço do
+  prestador até CARREGADA. FINALIZADA/CONTESTADA/RASCUNHO permanecem sem rota
+  (financeiro/snapshots, contestação e fluxo de rascunho são missões futuras);
+  nenhuma transição fora do grafo é possível pela API.
+
+6. CONCORRÊNCIA (missão item 7):
+- Aceite usa UPDATE ... WHERE id = :id AND status='SOLICITADA' AND provider_id
+  IS NULL, avaliado pelo banco (rowcount). Dois prestadores simultâneos: exatamente
+  um rowcount==1; o outro recebe 409. Não há lógica Python decidindo vencedor.
+- Teste test_13 reproduz a corrida com duas sessões que enxergam a mesma linha
+  SOLICITADA e executam a MESMA instrução (_stmt_aceite): rowcounts 1 e 0.
+
+7. VALIDAÇÕES DE ENTRADA (Pydantic v2):
+- endereco_origem_json: objeto JSON não vazio; data_agendada: datetime COM fuso
+  horário (naive => 422); itens: lista >= 1 com marca/dimensao/
+  quantidade_declarada > 0 e observacao opcional (<=1000). Constraint de banco
+  check_qtd_declarada_positive permanece como segunda barreira.
+- codigo_identificador gerado no servidor ("COL-" + hex UUIDv4), UNIQUE preservada.
+
+8. TESTES CRIADOS (17) — mapeamento com a lista obrigatória da missão (item 10):
+- criação pelo CLIENTE (test_01, inclui verificação direta no banco);
+- não autenticado 401 em todas as rotas novas (test_02);
+- PRESTADOR não cria (403) (test_03);
+- CLIENTE consulta as próprias e nunca as alheias (test_06/test_07/test_08);
+- PRESTADOR visualiza disponíveis apenas SOLICITADA (test_09);
+- aceite válido grava provider_id/status no banco (test_10);
+- segundo aceite rejeitado 409 mantendo o primeiro prestador (test_11);
+- CLIENTE não aceita (403) (test_12);
+- corrida transacional com vencedor único (test_13);
+- transições inválidas 409 + saltos bloqueados + cliente não avança +
+  cliente não cancela pós-aceite (test_15);
+- fluxo válido ACEITA..CARREGADA + repetição rejeitada (test_16);
+- coleta inexistente não vaza informação (404 uniformes) (test_07/test_14);
+- IDs forjados (client_id/provider_id no corpo, cancelar/avançar alheios)
+  rejeitados (test_14);
+- campos proibidos/inválidos 422 (10 casos) (test_05);
+- cancelamento pelo dono + indisponibilidade posterior (test_17).
+
+9. RESULTADO DOS TESTES:
+- python -m unittest discover -s backend/tests -p "test_*.py"
+- Ran 76 tests — OK (59 anteriores + 17 novos). Sem regressões.
+- Análise estática: projeto não possui lint configurado; nada adicionado.
+
+10. PROBLEMAS ENCONTRADOS E CORREÇÕES DURANTE A MISSÃO:
+- Import ausente (Profile) e geração de código improvisada detectados na revisão
+  imediata do próprio arquivo novo; corrigidos antes dos primeiros testes.
+- Correção de design após releitura do doc 05: cancelamento do cliente estava
+  validando contra o mapa geral (permitiria ACEITA->CANCELADA); restrito a
+  status == SOLICITADA (ACEITA->CANCELADA é prestador/admin com justificativa,
+  missão futura).
+- Constante STATUS_AVANCO_PRESTADOR criada sem consumidor; removida na revisão
+  de código morto (critério 4 da missão).
+- Artefato morto em teste (expressão "if False") removido antes da suíte final.
+
+11. DECISÕES TÉCNICAS TOMADAS (dentro do escopo "COMO"):
+- Estrutura em arquivo único collections.py (compatível com auth.py/profiles.py)
+  em vez do pacote sugerido — a missão condicionou o pacote à compatibilidade
+  arquitetural e proibiu camadas desnecessárias.
+- Status inicial SOLICITADA na criação (doc 05 Etapa 1.3: publicar = SOLICITADA);
+  fluxo RASCUNHO não foi solicitado nesta missão e não existe rota para ele.
+- Perdido o aceite => 409 operacional ("não está mais disponível"), distinto do
+  404 anti-enumeração, pois é informação legítima de negócio ao prestador.
+
+12. DECISÕES PENDENTES REGISTRADAS EM STATUS_DO_PROJETO.md (seção 8):
+- Filtro por região/geolocalização dos disponíveis (sem dado geo modelado).
+- Valor estimado ao prestador (depende de price_rules/Dashboard futura).
+- Cancelamento ACEITA->CANCELADA com justificativa (prestador/admin).
+- Esquema formal de endereco_origem_json (hoje: objeto não vazio).
+- Consumo do idempotency_key/X-Idempotency-Key (junto do offline/outbox).
+
+13. CONFIRMAÇÃO — FLUTTER NÃO ALTERADO:
+- git status --short -- meu_app_coleta_pneus => vazio.
+
+14. CONFIRMAÇÃO — NENHUMA REGRA CRÍTICA MODIFICADA:
+- Nenhum modelo ORM alterado; nenhuma migration nova; DOT segue sem UNIQUE;
+  número de fogo intocado; snapshots financeiros não implementados nem simulados
+  (campos permanecem NULL até missão própria); três roles oficiais; Argon2id/JWT
+  reaproveitados sem mudança; código enxuto (1 arquivo de domínio, helpers com
+  consumidor real, zero dependências novas, zero abstrações genéricas).
+
+15. PRÓXIMA MISSÃO: 09 — NÃO INICIADA (critério de parada respeitado).

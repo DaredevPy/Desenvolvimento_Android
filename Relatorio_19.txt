@@ -1,0 +1,122 @@
+RELATÓRIO DA MISSÃO 13 — OUTBOX E SINCRONIZAÇÃO OFFLINE
+(Relatorio_19.txt)
+
+1. ARQUIVOS CRIADOS:
+- backend/db/models/idempotency.py — modelo IdempotencyRecord.
+- backend/db/migrations/003_outbox_idempotencia.sql (UP).
+- backend/db/migrations/003_outbox_idempotencia_down.sql (DOWN).
+- backend/tests/test_outbox.py — suíte com 13 testes.
+- Relatorio_19.txt (este relatório).
+
+2. ARQUIVOS ALTERADOS:
+- backend/app/collections.py — registrar_pneus e concluir_conferencia com
+  X-Idempotency-Key; helper _verificar_chave_registro; _hash_operacao
+  generalizado; _registrar_pneus com flush; criar_coleta com flush DENTRO
+  do try de IntegrityError (correção estrutural, ver §7).
+- backend/app/pricing.py — finalizar_coleta com X-Idempotency-Key; corpo
+  construído após flush; imports dos helpers compartilhados.
+- backend/db/models/__init__.py — export IdempotencyRecord.
+- backend/tests/test_admin_api.py — filtro de datas da auditoria usa data
+  UTC (flake de fuso corrigido, ver §8).
+- backend/README.md, STATUS_DO_PROJETO.md — árvore, missão 13, decisões,
+  pendência consumida.
+
+3. ESTRATÉGIA DE IDEMPOTÊNCIA POR OPERAÇÃO (doc 09 §§2/4.1):
+- Tabela idempotency_records: id UUID PK; chave UNIQUE uq_idem_chave;
+  user_id FK users RESTRICT; escopo CHECK IN ('PNEUS','CONCLUSAO',
+  'FINALIZACAO'); recurso_id FK collections RESTRICT; request_hash
+  SHA-256 do payload validado; response_json JSONB NOT NULL; created_at.
+  Justificativa das constraints: UNIQUE(chave) é o árbitro de corrida no
+  banco; FKs RESTRICT impedem órfãos; CHECK impede escopo inválido.
+  Índice idx_idem_recurso (recurso_id) para consultas por coleta.
+- PNEUS (POST /{id}/conferencia/pneus): chave opcional; replay devolve o
+  lote armazenado com 200 sem reinserir; mesma chave + lote diferente =>
+  409; registro gravado NA MESMA transação dos pneus.
+- CONCLUSAO (POST /{id}/conferencia/concluir): agora trava a coleta com
+  FOR UPDATE; replay com 200 {"id","status":"CARREGADA"}; conclusão com
+  chave nova sobre coleta já concluída segue 409.
+- FINALIZACAO (POST /collections/{id}/finalizar): replay devolve o
+  fechamento armazenado com 200 — não há segundo fechamento nem novos
+  lançamentos; Missão 10 preservada integralmente (quantidade = COUNT de
+  pneus, regras ativas, Decimal ROUND_HALF_UP, snapshots imutáveis, 2
+  lançamentos, transição FINALIZADA, uma transação).
+- Reuso cruzado: mesma chave em escopo/recurso diferente => 409; chave de
+  outro usuário => 404 uniforme "Recurso não encontrado." (anti-
+  enumeração). Identidade SEMPRE do JWT + banco; corpo nunca autoriza.
+
+4. PROTEÇÃO CONTRA CONCORRÊNCIA:
+- Mesmo recurso: SELECT...FOR UPDATE na coleta serializa as três operações
+  (concluir passou a usar bloquear=True nesta missão).
+- Recursos distintos com a mesma chave: decididos por uq_idem_chave no
+  INSERT; IntegrityError => rollback => consulta ao registro do vencedor
+  => 200 com resposta armazenada; se não houver registro, re-relança.
+- sqlite ignora FOR UPDATE nos testes: nessa plataforma o perdedor pode
+  receber 409 de NF duplicado quando passa do replay antes do commit do
+  vencedor; o efeito único segue garantido (1 lote, 1 registro). No
+  PostgreSQL o row lock torna o desfecho determinístico (200).
+
+5. ROLLBACK / ATOMICIDADE:
+- Lote de pneus: validações ocorrem ANTES de qualquer INSERT; se um pneu
+  falha (ex.: NF duplicado), nada é gravado E nenhum registro de
+  idempotência é criado — a chave fica livre para retry válido (provado
+  nos testes 06/07).
+- Finalização/conclusão: chave + efeitos de negócio commitam juntos;
+  qualquer falha descarta tudo.
+- Replay NUNCA re-executa efeito: lê apenas response_json.
+
+6. TESTES (13) x lista obrigatória da missão:
+1->test_01; 2->test_02; 3->test_03; 4->test_04; 5->test_05 (threads +
+barreira); 6->test_06; 7->test_07; 8->test_08 (500 pneus mesmo DOT);
+9->test_09; 10->test_10; 11->test_11; 12->test_12; 13->test_13 (RBAC
+403 nos três fluxos + ownership 404 uniforme); 14->test_04/test_13;
+15->suíte completa (item 9).
+
+7. PROBLEMAS ENCONTRADOS E CORREÇÕES:
+- Bug latente da Missão 12 exposto por carga: o IntegrityError estoura no
+  db.flush() (INSERT), que estava FORA do try cujo fallback fazia replay.
+  Sob timing adverso o perdedor da corrida recebia 500. Corrigido movendo
+  flush+commit para dentro do try em criar_coleta; teste de corrida ficou
+  determinístico.
+- IDs nulos na resposta: construir o corpo ANTES do commit exige flush
+  prévio (defaults Python-side só viram valores no INSERT). Corrigido em
+  _registrar_pneus (flush após add_all) e finalizar (flush após
+  add_all). Sem isso, resposta e replay teriam "id": null.
+- Flake de fuso em test_admin_api.test_04: filtros de auditoria são UTC,
+  mas o teste usava date.today() LOCAL — entre 21h e meia-noite no Brasil
+  (UTC-3) o dia local difere do dia UTC e a janela nunca contém os logs.
+  Corrigido para datetime.now(timezone.utc).date(). Comportamento da API
+  inalterado (decisão Missão 11 mantida).
+- DOT "3526" em teste novo era semana futura (hoje = ago/2026): trocado
+  por DOT válido; fotos_divergencia_json exige dict (não lista); chaves
+  de teste separadas por escopo (_CHAVE_A/B/C) pois reutilizar chave entre
+  escopos corretamente retorna 409.
+
+8. RESULTADO TOTAL: python -m unittest discover -s backend/tests -p
+"test_*.py" => Ran 151 tests — OK (138 anteriores + 13 novos). Zero
+regressões; flakes eliminados.
+
+9. DECISÕES TÉCNICAS:
+- Tabela própria em vez de colunas novas em collections: uma coleta tem
+  MÚLTIPLAS operações chaveáveis ao longo do ciclo (vários lotes,
+  conclusão, finalização); uma única coluna de chave por coleta não
+  comportaria. Criação de coletas permanece nas colunas da própria tabela
+  (modelo do doc 06), sem migração retroativa.
+- Chave segue OPCIONAL nos três fluxos até o outbox do Flutter existir
+  (mesmo padrão da Missão 12); obrigatoriedade registrada como pendência.
+- status_original foi removida do modelo antes de estrear: replay é
+  sempre 200 por doc 09 §4.1; campo nunca seria lido (código enxuto).
+- Sem Redis/Celery/fila/WebSocket; fundação backend apenas.
+
+10. REGRAS CRÍTICAS CONFIRMADAS:
+- DOT pode repetir ilimitadamente: 500 pneus com DOT 2526 aceitos (teste
+  08); DOT jamais usado como chave de idempotência.
+- Número de fogo duplicado na MESMA coleta: bloqueio definitivo mantido
+  (409 mesmo com chaves distintas, teste 09); idempotência NÃO o contorna;
+  nenhum UNIQUE global criado.
+- Snapshots financeiros imutáveis: replays de finalização não recalculam
+  nem criam lançamentos (teste 12: 8.00/5.00 estáveis, estado FINALIZADA).
+- Flutter não alterado (ver §11); migrations 001/002 intactas.
+
+11. VERIFICAÇÃO GIT: git status -- meu_app_coleta_pneus vazio.
+
+12. MISSÃO 14 NÃO INICIADA.

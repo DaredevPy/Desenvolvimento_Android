@@ -12,6 +12,7 @@ from .price_rule import PriceRule
 from .reputation import ProviderReputationEvent
 from .restriction import ProviderRestriction
 from .audit import AuditLog
+from .idempotency import IdempotencyRecord
 
 __all__ = [
     "Base",
@@ -30,4 +31,5 @@ __all__ = [
     "ProviderReputationEvent",
     "ProviderRestriction",
     "AuditLog",
+    "IdempotencyRecord",
 ]

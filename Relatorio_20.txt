@@ -1,0 +1,98 @@
+RELATÓRIO DA MISSÃO 14 — CONTESTAÇÃO DA COLETA (FINALIZADA → CONTESTADA)
+(Relatorio_20.txt)
+
+1. ARQUIVOS CRIADOS:
+- backend/tests/test_contestacao.py — suíte com 13 testes.
+- Relatorio_20.txt (este relatório).
+
+2. ARQUIVOS ALTERADOS:
+- backend/app/collections.py — schema ContestacaoRequest (extra="forbid")
+  e endpoint POST /api/v1/collections/{coleta_id}/contestar.
+- backend/README.md, STATUS_DO_PROJETO.md — árvore, missão 14, decisão
+  crítica e novas pendências.
+Nenhuma migration criada ou alterada: a transição reusa collections.status
+(CONTESTADA já previsto em TRANSICOES_VALIDAS desde a Missão 08) e a tabela
+audit_logs existente.
+
+3. REGRAS IMPLEMENTADAS (docs 03 §§2.1/18, 04 §2, 05 §1, 10 §§2-3):
+- Quem contesta: Cliente dono da coleta ou Administrador (matriz doc 04,
+  linha "Confirmar / Contestar coleta realizada": CLIENTE sim, PRESTADOR
+  nao, ADMINISTRADOR sim). Prestador recebe 403.
+- Única transição aceita: FINALIZADA -> CONTESTADA. Qualquer outro estado
+  retorna 409 "Transição inválida a partir do estado atual."; CONTESTADA
+  é terminal (segunda contestação => 409 sem novo registro de auditoria).
+- Ownership: cliente só acessa a própria coleta; coleta inexistente ou de
+  terceiro devolvem o MESMO 404 uniforme "Recurso não encontrado."
+  (anti-enumeração). Administrador atravessa ownership por permissão
+  explícita dos docs 04/10, inclusive para coleta inexistente (404 igual).
+- Payload: corpo vazio estrito (extra="forbid"); campo extra => 422. Os
+  docs não definem justificativa/evidências para contestação — registrado
+  como pendência em vez de inventar contrato.
+- Auditoria: AuditLog(acao="CONTESTACAO_COLETA", entidade_afetada=
+  "collections", entidade_id=coleta_id, valor_anterior_json={"status":
+  "FINALIZADA"}, valor_novo_json={"status": "CONTESTADA"}, user_id do JWT,
+  ip_origem do request) gravado NA MESMA transação da mudança de estado.
+- Sem efeitos colaterais: nenhum lançamento novo, nenhum recálculo,
+  snapshots intactos, pneus/DOT/NF/itens declarados intactos, nenhum
+  evento de reputação automático (fórmula doc 03 §6 segue pendente).
+
+4. PROTEÇÃO CONTRA CONCORRÊNCIA:
+- db.get(Collection, id, with_for_update=True) serializa disputas pela
+  mesma coleta; UPDATE ... WHERE status='FINALIZADA' decide por rowcount:
+  1 => venceu (estado + auditoria commitam juntos); 0 => rollback + 409.
+- Teste de corrida (threads + barreira): exatamente um 200 e um único
+  registro de auditoria; perdedor recebe 409. sqlite ignora FOR UPDATE,
+  mas o UPDATE condicional preserva o resultado único; no PostgreSQL o
+  row lock torna o desfecho determinístico.
+
+5. TESTES (13) x lista obrigatória da missão:
+1->test_01; 2->test_02; 3->test_03; 4->test_04; 5->test_05; 6->test_06;
+7->test_07 (todos os saltos proibidos + terminal CONTESTADA); 8->test_08;
+9->test_09 (threads + barreira); 10->test_01 (transição exata);
+11->test_13/test_14 (financeiro e pneus intactos); 12->suíte completa
+(item 7); 13->test_15 (auditoria campo a campo) e test_16 (mediação do
+Administrador conforme matriz).
+
+6. PROBLEMAS ENCONTRADOS E CORREÇÕES (todos em código de teste):
+- levar_ate("SOLICITADA"): o criar_coleta auxiliar já aceita a coleta
+  (termina ACEITA), impossibilitando o estado pedido. Criados caminhos
+  dedicados: SOLICITADA cria coleta SEM aceite; CANCELADA cria coleta
+  nova antes de cancelar.
+- Passo "pneus" do helper retorna 201: asserção genérica passou a aceitar
+  (200, 201).
+- test_07 reconstruía o e-mail do prestador a partir do sufixo ("ctt-p07"
+  vs "ctt-ps07" real) => login 401 "Credenciais inválidas."; substituído
+  pelos cabeçalhos já retornados por levar_ate.
+- Asserção comparava len(logs) com lista de logs em vez de int.
+
+7. RESULTADO TOTAL: python -m unittest discover -s backend/tests -p
+"test_*.py" => Ran 164 tests — OK (151 anteriores + 13 novos). Zero
+regressões.
+
+8. DECISÕES TÉCNICAS:
+- Endpoint dedicado /contestar em vez de estender /status: doc 05 §1
+  trata contestação como ação específica do Cliente; payload restrito e
+  regra própria de ownership (admin atravessa) não cabem na rota genérica,
+  cujo enum de novo_status já impede alcançar CONTESTADA.
+- Sem nova tabela/migration: status + audit_logs cobrem o requisito
+  (código enxuto). Se a mediação ganhar fluxo próprio (parecer,
+  evidências), avaliar modelo dedicado naquela missão.
+- /contestar NÃO aceita X-Idempotency-Key: operação fora do escopo offline
+  do doc 09 §2 (que cobre operações do prestador); pendência registrada
+  caso o escopo mude.
+- Reputação automática deliberadamente NÃO implementada: fórmula/limiares
+  são DECISÃO PENDENTE documental (doc 03 §6); gravar evento agora seria
+  inventar regra de negócio.
+
+9. REGRAS CRÍTICAS CONFIRMADAS:
+- Snapshots imutáveis: valores e lançamentos byte-idênticos após a
+  contestação (teste 13).
+- Pneus/DOT/número de fogo/quantidades declaradas intactos (teste 14);
+  DOT continua podendo repetir livremente; nenhum UNIQUE novo criado.
+- Backend revalida tudo: papel e ownership via JWT + banco; estado via
+  UPDATE condicional no banco; corpo nunca autoriza nada.
+- Flutter não alterado (ver §10).
+
+10. VERIFICAÇÃO GIT: git status -- meu_app_coleta_pneus vazio.
+
+11. MISSÃO 15 NÃO INICIADA.

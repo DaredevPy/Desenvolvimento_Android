@@ -19,6 +19,8 @@ class Collection(Base):
     snapshot_valor_prestador: Mapped[Optional[float]] = mapped_column(Numeric(10, 2), nullable=True)
     snapshot_valor_cliente: Mapped[Optional[float]] = mapped_column(Numeric(10, 2), nullable=True)
     idempotency_key: Mapped[Optional[str]] = mapped_column(String(36), unique=True, nullable=True, index=True)
+    idempotency_request_hash: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    idempotency_response_json: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, onupdate=utc_now, nullable=False)
 

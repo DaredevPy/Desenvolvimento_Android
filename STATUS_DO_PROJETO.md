@@ -46,8 +46,17 @@ Aplicação 100% conteinerizada via Docker.
 | 05 | Autenticação e identidade do usuário (Argon2id + JWT + /api/v1/auth) |
 | 06 | Fundação RBAC (require_roles + 401/403 + endpoints de teste) |
 | 07 | Perfis operacionais e ownership (CRUD próprio CLIENTE/PRESTADOR) |
+| 07.1 | Ownership e isolamento de dados (helper exigir_dono + provas IDOR) |
+| 08 | Domínio de coletas: máquina de estados, aceite concorrente e ownership |
+| 09 | Conferência da coleta e registro individual dos pneus |
+| 10 | Financeiro: price_rules (ADMIN + auditoria), fechamento com snapshot imutável |
+| 11 | Fundação backend da Dashboard Administrativa (/api/v1/admin somente leitura) |
+| 12 | Idempotência da criação de coletas (X-Idempotency-Key + replay determinístico) |
+| 13 | Outbox: idempotência em pneus/conclusão/finalização (tabela idempotency_records) |
+| 14 | Contestação da coleta: FINALIZADA → CONTESTADA com auditoria no servidor |
 
-Relatórios históricos: `Relatorio.txt`, `Relatorio_2.txt` a `Relatorio_6.txt`.
+Relatórios históricos: `Relatorio.txt`, `Relatorio_2.txt` a `Relatorio_6.txt`;
+relatórios de missão em `Relatorio_10.txt` a `Relatorio_20.txt`.
 
 ## 5. Missão Atual
 
@@ -55,7 +64,7 @@ Nenhuma missão em execução.
 
 ## 6. Próximas Missões
 
-- Missão 08 — a ser definida (nenhuma funcionalidade iniciada)
+- Missão 15 — a ser definida (nenhuma funcionalidade iniciada)
 
 ## 6.1. Nota sobre relatórios
 
@@ -69,16 +78,34 @@ Ver `12_DECISOES_ARQUITETURAIS.md` como fonte detalhada. Resumo:
 
 - Identidade única do pneu é o UUID interno; número de fogo é identificação física operacional.
 - DOT (semana/ano) nunca é identificador único; idade calculada no backend.
+- Duplicidade de número de fogo na MESMA coleta: BLOQUEIO definitivo (decisão do produto na Missão 09, resolvendo a pendência de doc 06 §4.1). Entre coletas diferentes permanece permitido.
 - Financeiro com snapshots imutáveis por coleta encerrada.
+- Único caminho para FINALIZADA é POST /collections/{id}/finalizar (calcula com quantidade de pneus registrados, grava snapshots + 2 lançamentos e muda estado numa única transação). A rota genérica /status nunca alcança FINALIZADA (payload restringe os literais).
+- Sobreposição de faixas ativas do mesmo perfil_alvo (com vigências interseccionando) é bloqueada na criação/alteração; regras desativadas não bloqueiam.
+- API administrativa (backend da Dashboard, Missão 11): /api/v1/admin/{pricing-rules,audit-logs,collections} é SOMENTE LEITURA para coletas/auditoria; atravessa ownership de terceiros por permissão explícita do doc 10 sem alterar helpers de ownership dos perfis comuns; audit_logs não possui rota de escrita.
+- Idempotência (Missão 12, doc 09 §4.1): POST /collections aceita X-Idempotency-Key (UUIDv4). Primeiro processamento grava hash do payload + resposta armazenada; replay legítimo devolve a resposta EXATA com HTTP 200; reuso por outro usuário => 404 uniforme; mesma chave com conteúdo diferente => 409. A corrida de requests simultâneos é decidida pelo UNIQUE uq_collections_idempotency no banco (IntegrityError -> fallback de replay), não por lógica Python.
+- Outbox (Missão 13, doc 09 §§2/4.1): pneus, conclusão e finalização também aceitam X-Idempotency-Key. Registros vivem na tabela idempotency_records (UNIQUE chave + FKs RESTRICT + CHECK de escopo PNEUS/CONCLUSAO/FINALIZACAO); o registro da chave é gravado NA MESMA transação da operação (falha no meio do lote => nada persistido e chave livre para retry). Replay devolve a resposta armazenada com 200; escopo/recurso/hash diferentes com a mesma chave => 409. Concorrência: FOR UPDATE na coleta serializa o mesmo recurso; corridas entre recursos distintos são decididas pelo UNIQUE no banco. DOT jamais é chave de idempotência.
+- Contestação (Missão 14, docs 03 §2.1/04 §2/05 §1): POST /collections/{id}/contestar executa apenas a transição FINALIZADA→CONTESTADA, pelo Cliente dono ou pelo Administrador (matriz doc 04; prestador recebe 403). Corpo vazio estrito (extra="forbid") pois os docs não definem campos para contestação. Auditoria acao=CONTESTACAO_COLETA gravada NA MESMA transação (autor do token, IP, estado anterior/novo). Concorrência decidida por SELECT FOR UPDATE + UPDATE condicional por rowcount; sem nova tabela nem migration — collections.status + audit_logs bastam. Contestar não gera efeito financeiro nem evento de reputação automático.
 
 ## 8. Decisões Pendentes
 
-- Regra de bloqueio vs alerta presencial para duplicidade de número de fogo na mesma coleta.
-- Fórmula exata de conversão semana/ano do DOT para idade decimal no backend.
+- Fórmula exata de conversão semana/ano do DOT para idade decimal no backend (Missão 09 implementou versão provisória em anos completos, isolada em `_calcular_idade_anos`; troca é localizada).
+- Limite de idade para alerta: padrão 7.0 constante no backend; configuração pelo Administrador em missão futura.
+- Esquema formal das evidências fotográficas (`foto_pneu_url`, `fotos_divergencia_json` — hoje URL/dict não vazio; upload é missão futura).
 - Provedor oficial da API de mensagens WhatsApp.
 - Política formal de senha (comprimento mínimo, complexidade, rotação). Padrão atual mínimo: 1–128 caracteres.
 - Processo de provisionamento de usuários ADMINISTRADOR (cadastro público aceita apenas CLIENTE/PRESTADOR).
-- Isolamento de ownership (cliente só acessa as próprias coletas; prestador idem) — implementado para perfis na Missão 07 (sempre via usuario.id do token); controles de coleta a implementar em missão futura.
+- Isolamento de ownership (cliente só acessa as próprias coletas; prestador idem) — implementado para perfis (Missão 07) e coletas (Missão 08: dono via clients/profiles; prestador atribuído via providers/profiles, sempre a partir do usuario.id do token).
+- Remoção das rotas temporárias `/api/v1/ownership/test/*` quando o primeiro recurso real de domínio (ex.: coletas) assumir a regra de ownership com endpoints definitivos. Implementado em parte na Missão 08 (coletas); rotas /test permanecem até decisão de remoção.
+- Filtro por região/geolocalização das coletas disponíveis ao prestador (doc 05 Etapa 2): endereço é JSON livre sem dados geográficos modelados — critério de correspondência indefinido.
+- Valor estimado a receber exibido ao prestador (doc 05 Etapa 2): price_rules já existem (Missão 10); falta endpoint de consulta/estimativa para o app.
+- Política de data_vencimento dos lançamentos financeiros (hoje: data do fechamento); cobrança/pagamento e liquidação Pix são missões futuras (doc 07 §§4-5).
+- Cancelamento ACEITA→CANCELADA com justificativa (prestador/admin), conforme doc 05.
+- Esquema formal do endereco_origem_json (hoje: objeto JSON não vazio).
+- Tornar X-Idempotency-Key OBRIGATÓRIO nos fluxos offline (criação de coletas, pneus, conclusão e finalização) quando o outbox do Flutter for construído (doc 09 §2; hoje é opcional para não quebrar clientes atuais).
+- Contestação (Missão 14): prazo máximo para o Cliente contestar após FINALIZADA (doc 03 §18), payload formal de justificativa/evidências e transição de saída de CONTESTADA (mediação do Administrador) não definidos nos docs.
+- Idempotência da contestação: /contestar não aceita X-Idempotency-Key porque não está no escopo offline do doc 09 §2; revisar se o escopo mudar.
+- Reputação automática: evento DIVERGENCIA_INJUSTIFICADA (doc 03 §6) não é gravado por nenhuma operação hoje; depende de fórmula/limiares pendentes.
 - Revogação/refresh de tokens JWT (token atual é stateless até expirar).
 - Política de mascaramento de dados sensíveis do perfil (CPF/CNPJ e chave Pix) quando exibidos a terceiros; hoje o dono vê os próprios dados completos.
 - Formato/política de validação de telefone (hoje: 8–20 caracteres, sem máscara obrigatória).
@@ -101,7 +128,9 @@ Ver `12_DECISOES_ARQUITETURAIS.md` como fonte detalhada. Resumo:
 14. Valor do cliente e valor do prestador são independentes.
 15. Preços são configurados pelo Administrador.
 16. Coletas encerradas preservam snapshots financeiros imutáveis.
-17. Não criar UNIQUE global para número de fogo sem decisão aprovada.
-18. Não criar UNIQUE para DOT em nenhuma hipótese.
-19. Código deve ser enxuto.
-20. Não criar abstrações sem necessidade.
+17. Nenhum valor financeiro do payload substitui o cálculo do backend; /finalizar não aceita corpo.
+18. Recálculo de coleta FINALIZADA não existe; re-finalização e mudança de estado pós-fechamento retornam 409.
+19. Não criar UNIQUE global para número de fogo sem decisão aprovada.
+20. Não criar UNIQUE para DOT em nenhuma hipótese.
+21. Código deve ser enxuto.
+22. Não criar abstrações sem necessidade.

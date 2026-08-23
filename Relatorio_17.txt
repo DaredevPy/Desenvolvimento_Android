@@ -1,0 +1,88 @@
+RELATÓRIO DA MISSÃO 11 — API ADMINISTRATIVA E GESTÃO OPERACIONAL
+(Relatorio_17.txt)
+
+1. ARQUIVOS CRIADOS:
+- backend/app/admin.py — fundação backend da Dashboard Administrativa.
+- backend/tests/test_admin_api.py — suíte com 15 testes (banco isolado por
+  teste, mesmo padrão da suíte de financeiro).
+- Relatorio_17.txt (este relatório).
+
+2. ARQUIVOS ALTERADOS:
+- backend/app/main.py — registro do router admin.
+- backend/README.md, STATUS_DO_PROJETO.md — árvore, missão 11, decisões.
+
+3. ENDPOINTS CRIADOS (todos require_roles("ADMINISTRADOR")):
+- GET /api/v1/admin/pricing-rules — lista regras; filtros perfil_alvo e
+  ativo; paginação page/por_pagina (1..100); mostra faixas, vigências,
+  valor, ativo e criado_por_admin_id (suficiente p/ distinguir ativas de
+  históricas).
+- GET /api/v1/admin/audit-logs — consulta somente leitura; filtros:
+  entidade_afetada, acao, user_id, data_inicio/data_fim (UTC); paginação.
+  Nenhuma rota de escrita existe para audit_logs.
+- GET /api/v1/admin/collections — visão operacional; filtro por status;
+  paginação; retorna código, estado, cliente/prestador (id + email),
+  datas, quantidade declarada/conferida/coletada e snapshots existentes.
+- GET /api/v1/admin/collections/{id} — detalhe: dados básicos, itens
+  declarados, conferência (divergências com justificativa/fotos), pneus
+  individuais (DOT, número de fogo, ilegível, idade, alerta), snapshots e
+  lançamentos financeiros associados. SOMENTE LEITURA.
+
+4. REGRAS DE SEGURANÇA:
+- Identidade administrativa exclusivamente do JWT validado em
+  get_current_user + require_roles("ADMINISTRADOR"); nada de role via
+  body/query/header. CLIENTE/PRESTADOR => 403 em todas as rotas admin.
+- Ownership dos usuários comuns INTACTO: nenhum helper (_coleta_do_provider,
+  exigir_dono) foi alterado; a visão admin atravessa recursos de terceiros
+  por permissão explícita do doc 10 §2, consultando os modelos diretamente.
+- Paginação com Query(ge=1, le=100); todos os filtros são parâmetros
+  vinculados SQLAlchemy (sem SQL textual); selectinload evita N+1 na lista
+  e no detalhe.
+
+5. PROTEÇÃO FINANCEIRA:
+- Nenhum endpoint admin altera snapshot, lançamento ou coleta encerrada;
+  não existe recálculo de FINALIZADA pela API admin.
+- POST /collections/{id}/finalizar continua exclusivo do PRESTADOR: ADMIN
+  recebe 403 (provado em teste).
+- Configurar preço futuro (POST/PATCH pricing-rules, auditado) permanece a
+  única operação administrativa de escrita; histórico imutável provado.
+
+6. TESTES (15) x lista obrigatória:
+1→test_01 (lista + filtros + paginação); 2→test_02; 3→test_03;
+4→test_04 (auditoria com filtros entidade/ação/período);
+5→test_05 (PATCH/PUT/DELETE/POST em audit-logs => 404/405 e linha intacta);
+6→test_06 (lista operacional com quantidades e status filter);
+7→test_07 (coleta de terceiros); 8→test_08 (detalhe + divergência);
+9→test_09 (pneus individuais); 10→test_10 (snapshots + 2 lançamentos);
+11→test_11; 12→test_12 (todas as rotas admin => 403);
+13→test_13 (404 uniforme "Recurso não encontrado.");
+14→test_14 (admin não finaliza/recalcula; sem rotas de escrita sobre
+coletas/lançamentos); 15→test_15 (mudança de preço futuro não altera
+snapshot/lançamentos/estado).
+16 (regressão)=> suíte completa: Ran 126 tests — OK (111 anteriores + 15).
+
+7. RESULTADO TOTAL: python -m unittest discover -s backend/tests -p
+"test_*.py" => 126 testes OK, zero falhas, zero regressões.
+
+8. PROBLEMAS ENCONTRADOS:
+- Três defeitos no PRÓPRIO teste durante o desenvolvimento: import de User
+  ausente; TestClient.delete() não aceita json=; filtro de período invertido
+  (data_inicio antigo inclui registros — corrigido para data_fim). Produção
+  correta desde o início; nenhum defeito de backend encontrado.
+
+9. DECISÕES TÉCNICAS:
+- Consultas administrativas em arquivo próprio (admin.py), sem tocar
+  collections.py/pricing.py/ownership.py — separa escopo de leitura admin do
+  domínio dos usuários comuns.
+- E-mails de cliente/prestador resolvidos via cadeia de relacionamentos
+  Collection.client.profile.user (selectinload) em vez de joins manuais.
+- Filtros de período de auditoria com limites UTC explícitos (data_fim
+  inclusivo até 00:00 do dia seguinte).
+- Leitura admin NÃO grava auditoria (docs exigem log apenas para alterações).
+
+10. PENDÊNCIAS: nenhuma nova criada. Pendências pré-existentes do STATUS §8
+permanecem (ex.: remoção futura das rotas /ownership/test; provisionamento
+de ADMINISTRADOR segue via ORM/interno — cadastro público bloqueia role).
+
+11. FLUTTER NÃO ALTERADO: git status -- meu_app_coleta_pneus vazio.
+
+12. MISSÃO 12 NÃO INICIADA: nenhum código fora do escopo desta missão.

@@ -1,0 +1,93 @@
+RELATÓRIO DA MISSÃO 09 — CONFERÊNCIA DA COLETA E REGISTRO INDIVIDUAL DOS PNEUS
+(Relatorio_15.txt)
+
+1. ARQUIVOS CRIADOS:
+- backend/tests/test_conferencia.py — suíte auto-suficiente com 18 testes.
+- Relatorio_15.txt (este relatório).
+
+2. ARQUIVOS ALTERADOS:
+- backend/app/collections.py — etapa de conferência (schemas, _calcular_idade_anos,
+  _coleta_do_provider com trava FOR UPDATE opcional, 4 rotas).
+- backend/README.md — árvore atualizada (test_conferencia.py).
+- STATUS_DO_PROJETO.md — Missão 09 registrada; decisão de duplicidade resolvida (§7);
+  pendências atualizadas (§8).
+
+3. ENDPOINTS CRIADOS (prefixo /api/v1/collections; todos PRESTADOR atribuído):
+- POST /{id}/conferencia/iniciar — exige EM_DESLOCAMENTO; avanço atômico para
+  EM_CONFERENCIA; retorna itens pré-declarados (conferência sem re-digitação).
+- POST /{id}/conferencia/pneus (201) — registro individual em lote,
+  tudo-ou-nada numa única transação; exige EM_CONFERENCIA.
+- GET  /{id}/conferencia/pneus — lista pneus da conferência (cliente => 403).
+- POST /{id}/conferencia/concluir — grava CollectionItemChecked e avança
+  EM_CONFERENCIA -> CARREGADA atomicamente; conclusão duplicada => 409.
+
+4. OWNERSHIP: prestador sempre do token; _coleta_do_provider retorna o MESMO
+404 para inexistente e alheio (anti-enumeração). Nenhuma identidade via corpo/URL/query.
+
+5. REGRAS IMPLEMENTADAS (fonte):
+- DOT WWYY validado no servidor; semana/ano derivados pelo backend; campos
+  derivados no payload => 422. DOT repetido permitido (nenhum UNIQUE criado).
+- Número de fogo duplicado na MESMA coleta => 409 definitivo (intra-lote e vs
+  banco). Entre coletas diferentes => permitido (sem UNIQUE global).
+- Ilegível exige foto + observação e proíbe numero_fogo simultâneo (doc 06 §4.1).
+- Idade calculada só no backend (_calcular_idade_anos): anos completos ajustados
+  por semana, janela de século, DOT futuro rejeitado; alerta = idade >= 7.0.
+- Quantidade declarada jamais alterada pela conferência (250 declarado / 247
+  registrado testado).
+- Divergência (conferida ou coletada != declarada) exige justificativa +
+  fotos não vazias (doc 03 §3); sem divergência, evidência opcional.
+- quantidade_coletada = soma dos registros individuais (doc 03 §3) => senão 409.
+- Nenhum cálculo financeiro realizado (missão futura).
+
+6. TRANSAÇÃO E CONCORRÊNCIA:
+- Validação completa ANTES de qualquer insert + add_all/commit únicos: falha
+  em qualquer item descarta o lote inteiro (sem estado parcial).
+- SELECT ... FOR UPDATE na coleta durante o registro serializa escritas
+  concorrentes no PostgreSQL (no-op no SQLite da suíte), fechando a corrida da
+  checagem de duplicidade entre dispositivos do mesmo prestador.
+
+7. TESTES (18) x lista obrigatória: iniciar correto/alheio/cliente/estado errado
+(test_01..04); persistência individual UUID próprio (test_05); 500 pneus mesmo
+DOT (test_06); dois pneus mesmo DOT (test_07); NF duplicado na mesma coleta
+bloqueado intra-lote e entre chamadas (test_08); mesmo NF em coletas diferentes
+permitido — prova de não-UNIQUE global (test_09); ilegível sem evidência 422 /
+com numero_fogo 422 / válido persiste flag (test_10); declarada preservada após
+247 registros (test_11); divergência registrada com evidência e conclusão única
+(test_12); divergência sem justificativa/foto/foto-vazia 422 (test_13); sem
+divergência não exige evidência (test_14); coletada != pneus registrados 409
+(test_15); idade no backend + 6 campos proibidos 422 (test_16); 5 formatos de
+DOT inválidos 422 (test_17); prestador errado 404 uniforme leitura/escrita sem
+vazamento e cliente 403 (test_18). Estado parcial impossível: coberto por
+test_08/13/15 (zero linhas persistidas quando falha) + validação prévia.
+
+8. RESULTADO: python -m unittest discover -s backend/tests -p "test_*.py"
+=> Ran 94 tests — OK (76 anteriores + 18 novos). Sem regressões.
+
+9. PROBLEMAS ENCONTRADOS E CORREÇÕES:
+- Duas falhas iniciais eram do PRÓPRIO teste (produção correta): asserção de
+  idade para DOT 2020 (real 6.0; trocado por DOT 2012) e contagem global de NF
+  em banco compartilhado entre testes da classe (restringida às coletas do teste).
+- Bloco morto abandonado no rascunho de test_11 removido; imports não utilizados
+  removidos; constante STATUS_AVANCO-like sem consumidor não foi criada nesta
+  missão. Revisão final de código morto: nenhum item pendente.
+
+10. DECISÃO EXPLÍCITA DO PRODUTO REGISTRADA:
+- Doc 06 §4.1 mantinha pendente bloqueio rígido vs confirmação/justificativa
+  para duplicidade de NF na mesma coleta. A missão decidiu BLOQUEIO definitivo;
+  STATUS §7 registra a decisão e a pendência foi removida do §8.
+- Nota documental menor: doc 05 Etapa 4 diz "o app calcula a idade aproximada";
+  docs 03/06 e AGENTS determinam cálculo no backend — implementado backend.
+
+11. PENDÊNCIAS ATUALIZADAS (STATUS §8): fórmula decimal exata da idade
+(provisória isolada em _calcular_idade_anos); limite configurável pelo Admin
+(hoje constante 7.0); esquema formal das evidências fotográficas (upload futuro).
+
+12. CONFIRMAÇÃO — FLUTTER NÃO ALTERADO: git status -- meu_app_coleta_pneus vazio.
+
+13. CONFIRMAÇÃO — REGRAS CRÍTICAS PRESERVADAS: registro individual por pneu com
+UUID próprio (500 provados); DOT repetido aceito sem UNIQUE; identidade técnica =
+UUID interno; NF sem UNIQUE global; backend calcula idade/alerta; declarado nunca
+sobrescrito; nenhuma migration alterada; Argon2id/JWT/RBAC intactos; código enxuto
+(sem dependências novas, sem abstrações genéricas).
+
+14. PRÓXIMA MISSÃO: 10 — NÃO INICIADA.

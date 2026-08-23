@@ -1,0 +1,113 @@
+RELATÓRIO DA MISSÃO 07.1 — OWNERSHIP E ISOLAMENTO DE DADOS
+(Relatorio_13.txt)
+
+NOTA DE NUMERAÇÃO:
+Os arquivos de estado já registravam uma "Missão 07 — Perfis operacionais e
+ownership" concluída (Relatorio_12.txt). Para não criar duas missões com o
+mesmo número (o que corromperia a continuidade entre modelos de IA), esta
+missão foi registrada como 07.1, seguindo o padrão já existente no projeto
+(02.1, 03.5). O conteúdo integralmente executado é o definido pelo usuário
+para "MISSÃO 07 — Ownership e isolamento de dados".
+
+1. ARQUIVOS CRIADOS:
+- backend/app/ownership.py — router /api/v1/ownership com helper exigir_dono
+  e rotas temporárias /test/perfil/{perfil_id} (GET e PUT).
+- backend/tests/test_ownership.py — suíte auto-suficiente com 8 testes.
+- Relatorio_13.txt (este relatório).
+
+2. ARQUIVOS ALTERADOS:
+- backend/app/main.py — inclusão do ownership_router.
+- STATUS_DO_PROJETO.md — missão 07.1 registrada; decisão pendente adicionada
+  sobre remoção das rotas temporárias.
+- backend/tests/test_ownership.py corrigido durante desenvolvimento (bug do
+  próprio helper de teste, ver seção 10).
+
+3. ARQUIVOS REMOVIDOS: NENHUM.
+
+4. DEPENDÊNCIAS ADICIONAIS/REMOVIDAS: NENHUMA (requirements.txt inalterado).
+
+5. MECANISMO DE OWNERSHIP IMPLEMENTADO:
+- exigir_dono(user_id_do_recurso, usuario): compara o user_id lido DO BANCO
+  (profiles.user_id) com a identidade do token (usuario.id, obtido por
+  get_current_user da Missão 05). Divergência => 404.
+- Ordem das verificações: autenticação (401) -> RBAC (403) -> recurso existe?
+  (404) -> dono? (404).
+- Anti-enumeração (seção 5 da missão): "recurso inexistente" e "recurso de
+  outro usuário" retornam EXATAMENTE o mesmo 404 (mesmo status, mesmo corpo,
+  constante NAO_ENCONTRADO compartilhada). Nenhum dado do recurso alheio é
+  retornado em nenhuma hipótese.
+- Nenhum privilégio administrativo inventado: as rotas exigem CLIENTE ou
+  PRESTADOR; ADMINISTRADOR recebe 403 na barreira de papel, conforme matriz
+  do doc 04 (não existe hoje permissão documentada de admin ler perfil
+  alheio; "Gerenciar Clientes" pertence à Dashboard futura).
+
+6. SUPERFÍCIE TEMPORÁRIA (marcada como tal):
+- Rotas GET/PUT /api/v1/ownership/test/perfil/{perfil_id} existem apenas para
+  provar a regra com UUID chegando pela URL (nenhum endpoint anterior aceitava
+  UUID de recurso). Marcadas com comentário de temporariedade no topo do
+  arquivo, mesmo padrão das rotas /test do rbac.py (Missão 06). Remoção
+  registrada como decisão pendente em STATUS_DO_PROJETO.md.
+
+7. RECURSO UTILIZADO: tabela profiles existente (id UUID + user_id dono).
+- NENHUMA alteração de schema, modelo ou migration.
+- PUT demonstra manipulação controlada (telefone, validação 8-20 caracteres,
+  extra="forbid").
+
+8. TESTES CRIADOS (backend/tests/test_ownership.py) — mapeamento com os 7
+cenários obrigatórios da missão:
+- test_01: dono acessa o próprio recurso por UUID -> 200 (CLIENTE e PRESTADOR).
+- test_02: dono atualiza o próprio recurso por UUID -> 200 + banco confirmado.
+- test_03: cenários 2+5 — recurso alheio e inexistente indistinguíveis (404
+  idênticos), ataque cruzado PRESTADOR->CLIENTE também 404, sem vazamento de
+  dados da vítima no corpo da resposta.
+- test_04: manipulação de UUID na URL (UUID real alheio, maiúsculas, barra
+  final, UUID aleatório, string inválida) -> sempre 404.
+- test_05: cenário 3 — não autenticado -> 401 em leitura e escrita, sem
+  vazar telefone/nome do recurso.
+- test_06: cenário 4 — alterar recurso alheio -> 404 e banco intacto
+  (verificação direta na tabela via sessão própria, não só via resposta HTTP;
+  dono confirma valor original depois).
+- test_07: cenário 6 — user_id forjado no corpo JSON -> 422 (extra="forbid");
+  user_id na query não redireciona ownership -> 404; linha da vítima segue
+  com o dono original no banco.
+- test_08: cenário 7 — ADMINISTRADOR (inserido diretamente no banco, padrão
+  já usado na Missão 06) -> 403 em leitura e escrita de recurso alheio, banco
+  intacto.
+
+9. TESTES EXECUTADOS E RESULTADO:
+- python -m unittest discover -s backend/tests -p "test_*.py"
+- Resultado: Ran 59 tests — OK (51 anteriores + 8 novos).
+- Análise estática: nenhum lint configurado no projeto; nenhuma dependência
+  foi adicionada para isso (fora de escopo).
+
+10. PROBLEMAS ENCONTRADOS:
+- Bug no PRÓPRIO teste (não no código de produção): helper registrar criava
+  todos os usuários como CLIENTE (default do cadastro público), causando 403
+  ao tentar criar perfil provider nos cenários com PRESTADOR. Corrigido
+  passando role conforme a rota. Duas execuções falharam antes da correção;
+  suíte final 59/59 OK.
+- Observação pré-existente (fora de escopo, registrada aqui): arquivos
+  __pycache__/*.pyc aparecem rastreados pelo Git (ex.: backend/app/__pycache__
+  /main.cpython-313.pyc aparece como modificado). Recomenda-se adicionar
+  __pycache__/ ao .gitignore e removê-los do índice em uma tarefa de higiene
+  autorizada.
+
+11. REGRESSÕES VERIFICADAS:
+- Suíte anterior completa continua passando (51 testes).
+- git status confinado a: backend/app/main.py (modificado),
+  backend/app/ownership.py e backend/tests/test_ownership.py (novos),
+  além dos .pyc pré-existentes.
+- Flutter não tocado: nenhuma alteração sob meu_app_coleta_pneus/.
+
+12. DECISÕES PENDENTES (registradas em STATUS_DO_PROJETO.md):
+- Remoção das rotas temporárias /api/v1/ownership/test/* quando surgir o
+  primeiro recurso real de domínio.
+
+13. CONFIRMAÇÃO — NENHUMA REGRA CRÍTICA ALTERADA:
+- DOT segue sem UNIQUE; número de fogo segue sem UNIQUE global; nenhum schema
+  alterado; três roles oficiais preservadas; Argon2id/JWT/PostgreSQL intactos;
+  auth (Missão 05) e RBAC (Missão 06) reaproveitados sem modificação; modelo
+  financeiro e snapshots intocados; código enxuto respeitado (1 helper simples
+  com consumidor real, zero abstrações genéricas, zero dependências novas).
+
+14. PRÓXIMA MISSÃO: 08 — NÃO INICIADA.
