@@ -54,9 +54,12 @@ Aplicação 100% conteinerizada via Docker.
 | 12 | Idempotência da criação de coletas (X-Idempotency-Key + replay determinístico) |
 | 13 | Outbox: idempotência em pneus/conclusão/finalização (tabela idempotency_records) |
 | 14 | Contestação da coleta: FINALIZADA → CONTESTADA com auditoria no servidor |
+| 15 | Hardening de segurança da API: rate limiting, cabeçalhos HTTP e limites de entrada |
+| 16 | Fundação Outbox Offline no Flutter (fila persistente + retry seguro com X-Idempotency-Key) |
+| 17 | Integração do Outbox com a conferência (pneus/concluir/finalizar offline) |
 
 Relatórios históricos: `Relatorio.txt`, `Relatorio_2.txt` a `Relatorio_6.txt`;
-relatórios de missão em `Relatorio_10.txt` a `Relatorio_20.txt`.
+relatórios de missão em `Relatorio_10.txt` a `Relatorio_23.txt`.
 
 ## 5. Missão Atual
 
@@ -64,7 +67,7 @@ Nenhuma missão em execução.
 
 ## 6. Próximas Missões
 
-- Missão 15 — a ser definida (nenhuma funcionalidade iniciada)
+- Missão 18 — a ser definida (nenhuma funcionalidade iniciada)
 
 ## 6.1. Nota sobre relatórios
 
@@ -86,6 +89,9 @@ Ver `12_DECISOES_ARQUITETURAIS.md` como fonte detalhada. Resumo:
 - Idempotência (Missão 12, doc 09 §4.1): POST /collections aceita X-Idempotency-Key (UUIDv4). Primeiro processamento grava hash do payload + resposta armazenada; replay legítimo devolve a resposta EXATA com HTTP 200; reuso por outro usuário => 404 uniforme; mesma chave com conteúdo diferente => 409. A corrida de requests simultâneos é decidida pelo UNIQUE uq_collections_idempotency no banco (IntegrityError -> fallback de replay), não por lógica Python.
 - Outbox (Missão 13, doc 09 §§2/4.1): pneus, conclusão e finalização também aceitam X-Idempotency-Key. Registros vivem na tabela idempotency_records (UNIQUE chave + FKs RESTRICT + CHECK de escopo PNEUS/CONCLUSAO/FINALIZACAO); o registro da chave é gravado NA MESMA transação da operação (falha no meio do lote => nada persistido e chave livre para retry). Replay devolve a resposta armazenada com 200; escopo/recurso/hash diferentes com a mesma chave => 409. Concorrência: FOR UPDATE na coleta serializa o mesmo recurso; corridas entre recursos distintos são decididas pelo UNIQUE no banco. DOT jamais é chave de idempotência.
 - Contestação (Missão 14, docs 03 §2.1/04 §2/05 §1): POST /collections/{id}/contestar executa apenas a transição FINALIZADA→CONTESTADA, pelo Cliente dono ou pelo Administrador (matriz doc 04; prestador recebe 403). Corpo vazio estrito (extra="forbid") pois os docs não definem campos para contestação. Auditoria acao=CONTESTACAO_COLETA gravada NA MESMA transação (autor do token, IP, estado anterior/novo). Concorrência decidida por SELECT FOR UPDATE + UPDATE condicional por rowcount; sem nova tabela nem migration — collections.status + audit_logs bastam. Contestar não gera efeito financeiro nem evento de reputação automático.
+- Hardening (Missão 15, doc 08 §4): rate limiting por IP com janela deslizante em memória em /auth/login e /auth/register, DESATIVADO por padrão (limite <= 0) e ativado por variáveis de ambiente na implantação — desenvolvimento local e suíte de testes permanecem intactos; 429 uniforme com Retry-After, tentativa bloqueada não prorroga a janela. Middleware HTTP acrescenta X-Content-Type-Options/X-Frame-Options/Referrer-Policy/Cache-Control: no-store e CSP restritiva (exceto /docs|/redoc|/openapi.json); HSTS somente com HSTS_ENABLED=true (HTTPS garantido). Corpo > 1 MiB (Content-Length) recebe 413 antes das rotas. Tetos de entrada: itens ≤ 200, pneus/lote ≤ 2000, quantidades ≤ 1.000.000, JSONs livres (endereco/fotos/veiculo) ≤ 4000 caracteres (helper exigir_json_compacto). Nenhuma dependência nova; nenhuma migration.
+- Fundação Outbox Offline no Flutter (Missão 16, docs 09 §§2-4): fila local PERSISTENTE (`shared_preferences`) em `meu_app_coleta_pneus/lib/core/outbox/` — operações pendentes sobrevivem ao fechamento do app. Cada operação recebe UUIDv4 próprio no agendamento e esse MESMO id é a X-Idempotency-Key reutilizada em toda tentativa (retry nunca regenera a chave nem altera o corpo). Sincronização em ordem cronológica estrita: sucesso confirmado pelo backend (200/201) marca SINCRONIZADA e descarta o item; falha de rede ou HTTP mantém a operação PENDENTE e interrompe o lote sem tocar nos seguintes. Transporte HTTP injetável (testes sem servidor). Dependências adicionadas ao Flutter: `http` e `shared_preferences` (pacotes oficiais, necessários para REST e persistência multiplataforma — o SDK puro não oferece persistência sem dart:io, que quebraria o alvo Web). Backend intocado.
+- Integração Outbox × conferência (Missão 17): as quatro operações offline do doc 09 §2 usam o MESMO OutboxService/OutboxStore/OperacaoPendente, cada uma com UUIDv4 próprio usado como X-Idempotency-Key (backend já deduplica via Missões 12/13). Payloads espelham os contratos Pydantic reais (extra=forbid): pneus = {"pneus":[...]}, conclusão = {"quantidade_conferida","quantidade_coletada"}, finalização = corpo vazio estrito {}. Correção incluída: helper da criação de coleta da Missão 16 produzia payload inventado (itens com categoria/descricao_item_json e data sem fuso) que receberia 422 — alinhado ao ColetaCreateRequest real ({marca,dimensao,quantidade_declarada} e ISO 8601 com offset). Nenhuma dependência nova; nenhum mecanismo de idempotência/retry/fila recriado.
 
 ## 8. Decisões Pendentes
 
@@ -109,6 +115,8 @@ Ver `12_DECISOES_ARQUITETURAIS.md` como fonte detalhada. Resumo:
 - Revogação/refresh de tokens JWT (token atual é stateless até expirar).
 - Política de mascaramento de dados sensíveis do perfil (CPF/CNPJ e chave Pix) quando exibidos a terceiros; hoje o dono vê os próprios dados completos.
 - Formato/política de validação de telefone (hoje: 8–20 caracteres, sem máscara obrigatória).
+- Hardening (Missão 15): rate limiting é por processo (memória); store compartilhado (ex.: Redis) só se a API escalar para múltiplas instâncias/workers — hoje proibido por não haver necessidade explícita. Rate limiting por usuário autenticado (100 req/min por token, doc 08 §4.4) não implementado. IP real atrás de proxy (Render) depende de --proxy-headers/TrustedHost na implantação. Corpos sem Content-Length (chunked) escapam do limite de 1 MiB. CORS restrito (doc 08 §4.5) aguarda origens oficiais do Flutter Web.
+- Outbox Flutter (Missões 16/17): disparo automático da sincronização ao restabelecer conexão e em eventos de ciclo de vida do app não implementado — hoje `sincronizarPendentes()` é invocado pelo chamador (listener de conectividade exigiria nova dependência). Política para erros HTTP definitivos (4xx) na fila ainda não definida: hoje permanecem PENDENTES e interrompem o lote, preservando a ordem. UI de acompanhamento da fila não existe (fora do escopo). As 4 operações offline já usam a fundação; fotos/divergências e upload de imagens seguem missões futuras.
 
 ## 9. Regras que NÃO Podem Ser Quebradas
 

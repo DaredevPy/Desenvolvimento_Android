@@ -1,0 +1,173 @@
+RELATORIO DA MISSAO 15 - HARDENING DE SEGURANCA DA API
+(Relatorio_21.txt)
+
+1. ARQUIVOS CRIADOS:
+- backend/app/rate_limit.py — limitador por IP, janela deslizante em
+  memoria (thread-safe), sem dependencias externas.
+- backend/app/validacao.py — exigir_json_compacto(): teto de tamanho para
+  campos JSON livres.
+- backend/tests/test_hardening.py — suíte com 20 testes.
+- Relatorio_21.txt (este relatorio).
+
+2. ARQUIVOS ALTERADOS:
+- backend/app/main.py — middleware HTTP de hardening: cabecalhos de
+  seguranca + rejeicao de corpo > 1 MiB (413) antes das rotas; HSTS
+  condicionado à variavel HSTS_ENABLED; CSP suprimida apenas em /docs,
+  /redoc e /openapi.json para nao quebrar o Swagger local.
+- backend/app/auth.py — _exigir_rate_limit() aplicado a POST /login e
+  POST /register (429 uniforme + Retry-After).
+- backend/app/collections.py — tetos de volume (itens <= 200,
+  pneus/lote <= 2000, quantidades <= 1.000.000) e validadores de tamanho
+  para endereco_origem_json e fotos_divergencia_json.
+- backend/app/profiles.py — validador de tamanho para dados_veiculo_json
+  (criacao e atualizacao do prestador).
+- backend/.env.example — RATE_LIMIT_LOGIN_MAX, RATE_LIMIT_REGISTRO_MAX,
+  RATE_LIMIT_JANELA_SEGUNDOS e HSTS_ENABLED documentados.
+- backend/README.md, STATUS_DO_PROJETO.md — arvore, missao 15, decisao
+  critica e novas pendencias.
+Nenhuma migration criada ou alterada. Nenhuma rota nova de negocio.
+
+3. DEPENDENCIAS ADICIONADAS/REMOVIDAS:
+Nenhuma. requirements.txt intocado (rate limiting usa stdlib threading/
+time/math; os cabecalhos sao middleware Starlette ja existente).
+
+4. MECANISMOS DE SEGURANCA IMPLEMENTADOS (doc 08 §4):
+a) Rate limiting em endpoints publicos sensiveis (login e register).
+b) Cabecalhos HTTP de seguranca em TODAS as respostas (inclusive erros).
+c) Limite de tamanho de corpo (1 MiB via Content-Length -> 413) e tetos
+   de validacao por campo (422).
+d) Re-prova de que o hardening nao cria bypass: JWT, RBAC, ownership,
+   idempotencia, maquina de estados e regras financeiras re-testados.
+
+5. CONFIGURACAO DE RATE LIMITING:
+- Chave de limitacao: IP do cliente (request.client.host), escopo
+  separado por endpoint ("login" / "registro"); baldes independentes.
+- Janela: deslizante, RATE_LIMIT_JANELA_SEGUNDOS (padrao 60s).
+- Limite: RATE_LIMIT_LOGIN_MAX / RATE_LIMIT_REGISTRO_MAX (tentativas por
+  janela). Valor <= 0 DESATIVA o mecanismo (padrao do repositorio).
+- Resposta quando excedido: 429 com corpo uniforme
+  "Muitas requisicoes. Aguarde antes de tentar novamente." e header
+  Retry-After (segundos restantes da janela, >= 1).
+- Comportamento: tentativas bloqueadas NAO prorrogam a janela; sucesso
+  e falha contam igualmente (doc 08 §4.4 cita 5 logins/minuto como
+  exemplo — o numero exato fica para a implantacao via .env/Docker).
+- Ativacao: DESATIVADO por padrao para nao quebrar desenvolvimento local
+  nem os testes existentes (estado em memoria compartilhado pelo processo
+  de testes); a implantacao ativa definindo os limites positivos no
+  ambiente (.env.example documenta). Sem Redis/infra externa.
+
+6. CABECALHOS ADICIONADOS:
+- X-Content-Type-Options: nosniff
+- X-Frame-Options: DENY
+- Referrer-Policy: no-referrer
+- Cache-Control: no-store (respostas carregam dados pessoais/financeiros)
+- Content-Security-Policy: default-src 'none'; frame-ancestors 'none'
+  (suprimida somente em /docs, /redoc, /openapi.json p/ Swagger UI)
+- Strict-Transport-Security: max-age=31536000; includeSubDomains
+  SOMENTE com HSTS_ENABLED=true (HTTPS garantido na borda); padrao ausente
+  para nao prejudicar desenvolvimento local em HTTP.
+
+7. VALIDACOES ADICIONADAS (rejeicao 413/422 no servidor):
+- Corpo > 1.048.576 bytes (Content-Length) => 413 antes das rotas.
+- itens declarados <= 200; pneus por lote <= 2000 (testes existentes usam
+  ate 500); quantidade_declarada/conferida/coletada <= 1.000.000.
+- endereco_origem_json, fotos_divergencia_json e dados_veiculo_json
+  limitados a 4000 caracteres serializados (esquema formal segue
+  pendente em STATUS §8; aqui apenas se rejeita entrada excessiva).
+- Schemas ja estritos (extra="forbid") foram mantidos; nenhum contrato
+  existente foi alterado. Headers/path/query ja limitados ou inofensivos
+  (X-Idempotency-Key exige UUIDv4; paginacao admin le=100).
+
+8. TESTES CRIADOS (20) x LISTA OBRIGATORIA DA MISSAO:
+ 1 -> test_11 (autenticacao exigida: 401 sem/invalido token)
+ 2 -> test_12 (RBAC: cliente/prestador 403 no admin; admin 200)
+ 3 -> test_13 (ownership: coleta alheia 404 uniforme e fora da listagem)
+ 4 -> test_07 (login repetido sofre rate limit: 429 + Retry-After)
+ 5 -> test_08 (determinismo: limite exato + janela que expira e repete)
+ 6 -> test_06 (desativado por padrao nao bloqueia; abaixo do limite ok;
+      test_09 complementa com baldes independentes login/registro)
+ 7 -> test_01/test_02/test_03/test_05 (cabecalhos em 200, erros, HSTS
+      condicionado, Swagger preservado)
+ 8 -> test_04 (corpo excessivo 413) e test_19 (itens/pneus/quantidade/
+      endereco/campos injetados => 422)
+ 9 -> test_14 (client_id/user_id/role no payload rejeitados)
+10 -> test_15 (role forjada assinada corretamente => role do banco vence
+      403; sub fantasma 401; chave errada 401)
+11 -> test_16 (injecao de snapshot/status => 422, estado intacto;
+      finalizacao legitima calcula 2x4.00=8.00 e 2x2.50=5.00)
+12 -> test_17 (idempotencia: replay 200 corpo identico; divergencia 409)
+13 -> test_18 (fluxo de coleta: criar/listar/cancelar/re-cancelar 409/
+      salto de estado negado — nenhuma regressao)
+14 -> test_10/test_20 (rate limit nao enumera contas; login uniforme p/
+      conta inexistente vs senha errada; /health/db 503 sem URL/traceback)
+
+9. RESULTADO COMPLETO DA SUITE:
+python -m unittest discover -s backend/tests -p "test_*.py"
+=> Ran 184 tests — OK (164 anteriores + 20 novos). Zero regressoes.
+Suíte nova isolada: backend.tests.test_hardening => Ran 20 tests — OK.
+
+10. PROBLEMAS ENCONTRADOS:
+- Rate limiting ativo por padrao quebraria a suíte existente (estado em
+  memoria compartilhado por todos os TestClient do processo; centenas de
+  logins de teste sairiam do mesmo IP "testclient").
+- CSP restritiva (default-src 'none') quebraria o Swagger UI local.
+- Durante a edicao da suíte, o test_06 chegou a ser perdido num refactor
+  do arquivo de teste (detecado pela contagem 19/20 na execucao
+  verbosa); restaurado antes da rodada final.
+
+11. CORRECOES:
+- Mecanismo de rate limit controlado por variaveis de ambiente, com
+  limite <= 0 desligando-o: producao ativa via .env/Docker; testes e dev
+  local ficam intocaveis (requisito explicito da missao).
+- CSP aplicada somente as rotas de API; documentacao preservada.
+- test_06 restaurado; suíte final 20/20.
+
+12. DECISOES TECNICAS:
+- Limitador proprio em memoria (stdlib) em vez de dependencia slowapi/
+  redis: codigo enxuto, zero infra nova, suficiente para instancia unica
+  no Render; limites por ambiente via env (mesmo padrao de
+  ACCESS_TOKEN_EXPIRE_MINUTES).
+- Chave por IP (e nao por conta): anti brute-force real; mensagem 429
+  uniforme para nao introduzir enumeracao. Credenciais invalidas mantem
+  401 uniforme com dummy hash Argon2id (tempo constante).
+- HSTS por flag: doc exige HSTS apenas com HTTPS garantido; Render serve
+  HTTPS na borda e a ativacao fica no ambiente, sem acoplamento.
+- Cache-Control: no-store em toda resposta de API (dados sensíveis);
+  X-Frame-Options/CSP como defesa em profundidade p/ respostas refletidas.
+- Tetos numericos (200 itens / 2000 pneus / 1e6 quantidades): folga ~4x
+  sobre o maior caso real citado nos docs (500 pneus) e cortam payloads
+  capazes de exaurir CPU/memoria.
+
+13. PENDENCIAS (registradas em STATUS §8):
+- Rate limiting por processo: store compartilhado (ex.: Redis) apenas se
+  a API escalar horizontal/multi-worker (hoje proibido por falta de
+  necessidade explicita).
+- Rate limiting por usuario autenticado (100 req/min por token, doc 08
+  §4.4): nao implementado nesta missao.
+- IP real atras de proxy (Render): exige --proxy-headers/TrustedHost na
+  implantacao; sem isso o limitador ve o IP do proxy.
+- Corpos sem Content-Length (chunked) escapam do limite de 1 MiB.
+- CORS restrito (doc 08 §4.5): origens oficiais do Flutter Web ainda nao
+  definidas nos docs — nao configurado para nao inventar contrato.
+- Valores exatos de limite de login/registro por ambiente (doc cita
+  "5/min" como exemplo) ficam para a implantacao.
+
+14. FLUTTER NAO ALTERADO:
+git status --porcelain -- meu_app_coleta_pneus => vazio (confirmado).
+
+15. REGRAS CRITICAS PRESERVADAS:
+- JWT: assinatura/expiracao/sub validados como antes; role SEMPRE
+  recarregada do banco (test_15).
+- RBAC e ownership intactos (test_12/test_13); nenhum papel ou permissao
+  novo criado.
+- Idempotencia (collections + idempotency_records) intocada (test_17).
+- Maquina de estados, snapshots financeiros imutaveis, calculo no backend,
+  DOT repetivel sem UNIQUE, triplo registro de quantidades: nenhuma linha
+  de negocio alterada — apenas tetos de entrada rejeitam excessos antes
+  da regra existente rodar (test_16/test_18/test_19).
+
+16. MISSAO 16 NAO INICIADA:
+Nenhuma funcionalidade posterior foi antecipada. Proxima missao: a
+definir.
+
+

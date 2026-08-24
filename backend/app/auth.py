@@ -1,7 +1,7 @@
 # backend/app/auth.py
 from typing import Literal
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel, EmailStr, Field, field_validator
 from sqlalchemy import select
@@ -10,7 +10,7 @@ from sqlalchemy.exc import IntegrityError
 from backend.db import session as db_session
 from backend.db.models import User
 
-from . import security
+from . import rate_limit, security
 
 router = APIRouter(prefix="/api/v1/auth", tags=["auth"])
 
@@ -41,6 +41,19 @@ def _autenticar_ou_401(detail: str) -> HTTPException:
     )
 
 
+def _exigir_rate_limit(request: Request, escopo: str, limite: int) -> None:
+    # Doc 08 §4.4: mitiga brute force em /login e abuso de criação de contas
+    # em /register. Resposta uniforme por IP; não revela nada sobre a conta.
+    ip = request.client.host if request.client else "desconhecida"
+    retry_after = rate_limit.registrar_tentativa(escopo, limite, ip)
+    if retry_after is not None:
+        raise HTTPException(
+            status_code=429,
+            detail="Muitas requisições. Aguarde antes de tentar novamente.",
+            headers={"Retry-After": str(retry_after)},
+        )
+
+
 def get_current_user(
     credentials: HTTPAuthorizationCredentials | None = Depends(bearer_scheme),
 ) -> User:
@@ -60,7 +73,8 @@ def get_current_user(
 
 
 @router.post("/register", status_code=201)
-def register(data: RegistroRequest) -> dict:
+def register(data: RegistroRequest, request: Request) -> dict:
+    _exigir_rate_limit(request, "registro", rate_limit.LIMITE_REGISTRO)
     with db_session.SessionLocal() as db:
         existente = db.scalars(select(User).where(User.email == data.email)).first()
         if existente is not None:
@@ -77,7 +91,8 @@ def register(data: RegistroRequest) -> dict:
 
 
 @router.post("/login")
-def login(data: Credenciais) -> dict:
+def login(data: Credenciais, request: Request) -> dict:
+    _exigir_rate_limit(request, "login", rate_limit.LIMITE_LOGIN)
     with db_session.SessionLocal() as db:
         usuario = db.scalars(select(User).where(User.email == data.email)).first()
 

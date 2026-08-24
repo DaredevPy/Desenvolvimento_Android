@@ -7,8 +7,10 @@ Camada de persistência relacional em PostgreSQL 15+ com suporte a SQLAlchemy 2.
 ```
 backend/
 ├── app/
-│   ├── main.py                              # Aplicação FastAPI (/health, /health/db)
+│   ├── main.py                              # Aplicação FastAPI (/health, /health/db) + middleware de hardening
 │   ├── security.py                          # Hash Argon2id + tokens JWT (HS256)
+│   ├── rate_limit.py                        # Rate limiting por IP, janela deslizante (login/register)
+│   ├── validacao.py                         # Limites de tamanho para campos JSON livres
 │   ├── auth.py                              # Rotas /api/v1/auth (register, login, me)
 │   ├── rbac.py                              # require_roles() + endpoints de teste RBAC
 │   ├── profiles.py                          # Rotas /api/v1/profile (perfis CLIENTE/PRESTADOR)
@@ -52,6 +54,7 @@ backend/
 │   ├── test_idempotencia.py                 # Testes de X-Idempotency-Key (replay, corrida, regras preservadas)
 │   ├── test_outbox.py                       # Idempotência offline: pneus, conclusão e finalização
 │   ├── test_contestacao.py                    # Contestação FINALIZADA → CONTESTADA (RBAC, estados, auditoria)
+│   ├── test_hardening.py                      # Missão 15: rate limiting, cabeçalhos HTTP e limites de entrada
 │   ├── test_db_schema.py                  # Testes de relacionamentos e snapshots
 │   └── test_dot_repetition.py             # Teste obrigatório de repetição do DOT (500 pneus)
 ├── requirements.txt                        # Dependências Python
@@ -65,6 +68,12 @@ pip install -r backend/requirements.txt
 # Defina no ambiente (ou copie backend/.env.example):
 #   DATABASE_URL=postgresql://usuario:senha@host:5432/banco
 #   SECRET_KEY=<segredo aleatório longo — assinatura JWT>
+# Rate limiting (padrão 0 = desativado; produção define limites positivos):
+#   RATE_LIMIT_LOGIN_MAX=5
+#   RATE_LIMIT_REGISTRO_MAX=5
+#   RATE_LIMIT_JANELA_SEGUNDOS=60
+# HSTS somente com HTTPS garantido na borda:
+#   HSTS_ENABLED=true
 uvicorn backend.app.main:app
 ```
 

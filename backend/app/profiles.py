@@ -10,6 +10,7 @@ from backend.db import session as db_session
 from backend.db.models import Client, Profile, Provider, User
 
 from .rbac import require_roles
+from .validacao import exigir_json_compacto
 
 router = APIRouter(prefix="/api/v1/profile", tags=["profiles"])
 
@@ -38,6 +39,11 @@ class PerfilPrestadorRequest(PerfilBase):
     chave_pix: Optional[str] = Field(default=None, max_length=255)
     dados_veiculo_json: Optional[dict] = None
 
+    @field_validator("dados_veiculo_json")
+    @classmethod
+    def limitar_veiculo(cls, value: Optional[dict]) -> Optional[dict]:
+        return exigir_json_compacto("dados_veiculo_json", value) if value is not None else None
+
 
 class ClienteUpdate(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -55,6 +61,11 @@ class ClienteUpdate(BaseModel):
 class PrestadorUpdate(ClienteUpdate):
     chave_pix: Optional[str] = Field(default=None, max_length=255)
     dados_veiculo_json: Optional[dict] = None
+
+    @field_validator("dados_veiculo_json")
+    @classmethod
+    def limitar_veiculo(cls, value: Optional[dict]) -> Optional[dict]:
+        return exigir_json_compacto("dados_veiculo_json", value) if value is not None else None
 
 
 def _perfil_do_usuario(db, user_id: str) -> Optional[Profile]:

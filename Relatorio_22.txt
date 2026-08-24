@@ -1,0 +1,127 @@
+RELATORIO DA MISSAO 16 - FUNDACAO OUTBOX OFFLINE NO FLUTTER
+(Relatorio_22.txt)
+
+1. ARQUIVOS CRIADOS:
+- meu_app_coleta_pneus/lib/core/outbox/operacao_pendente.dart — modelo da
+  operacao agendada offline: id (UUIDv4 proprio, que e a propria
+  X-Idempotency-Key), caminho do endpoint, corpo JSON exato, criado_em,
+  status (pendente/sincronizada), tentativas e ultimo_erro. Serializavel.
+- meu_app_coleta_pneus/lib/core/outbox/outbox_store.dart — fila local
+  PERSISTENTE em shared_preferences (chave outbox_operacoes), com ordem
+  cronologica de insercao preservada. Operacoes pendentes sobrevivem ao
+  fechamento do aplicativo. Metodos: carregar, inserir, atualizar, remover.
+- meu_app_coleta_pneus/lib/core/outbox/outbox_service.dart — servico de
+  sincronizacao: envio sequencial em ordem estrita; cabecalho
+  X-Idempotency-Key = id da operacao (MESMA chave em toda tentativa);
+  sucesso confirmado (200/201) marca SINCRONIZADA e descarta o item;
+  falha de rede ou HTTP mantem a operacao PENDENTE e interrompe o lote
+  sem alterar os seguintes. Transporte HTTP injetavel para testes
+  (typedef EnviarRequisicao); implementacao padrao usa package:http com
+  baseUrl e token Bearer opcional. Registros marcados como sincronizados
+  que sobraram de um corte entre marcacao e descarte sao removidos na
+  passagem seguinte (recuperacao de queda).
+- meu_app_coleta_pneus/test/outbox_test.dart — suíte com 10 testes
+  cobrindo os 10 requisitos obrigatorios da missao.
+- meu_app_coleta_pneus/README.md — descricao do modulo outbox, estrutura
+  e comando de testes (arquivo estava vazio).
+- Relatorio_22.txt (este relatorio).
+
+2. ARQUIVOS ALTERADOS:
+- meu_app_coleta_pneus/pubspec.yaml — duas dependencias adicionadas
+  (ver secao 3).
+- meu_app_coleta_pneus/pubspec.lock — gerado pelo pub get.
+- STATUS_DO_PROJETO.md — missao 16 concluida, decisao critica e novas
+  pendencias registradas.
+
+NENHUM arquivo do backend foi criado ou alterado: nenhuma rota nova,
+nenhuma migration, nenhuma regra de negocio, financeiro, RBAC ou
+ownership modificados.
+
+3. DEPENDENCIAS ADICIONADAS/REMOVIDAS:
+Adicionadas ao Flutter:
+- http ^1.2.0 — cliente REST oficial (dart.dev), necessario para o envio
+  ao backend FastAPI (arquitetura doc AGENTS §1) e compativel com Web.
+- shared_preferences ^2.2.0 — persistencia oficial multiplataforma
+  (Android/iOS/Web). Justificativa: o SDK puro nao oferece persistencia
+  sem dart:io, cujo uso quebraria o alvo Web exigido pela arquitetura.
+Nenhuma dependencia removida. Backend intocado.
+
+4. O QUE FOI IMPLEMENTADO (doc 09 §§2-4):
+a) Armazenamento local PERSISTENTE das operacoes pendentes (nao volatil,
+   sobrevive ao fechamento/reabertura do app — provado por teste).
+b) Modelo de operacao com UUIDv4, estado e contagem de tentativas.
+c) Cada operacao recebe UUIDv4 PROPRIO no momento do agendamento; esse
+   mesmo valor e enviado como X-Idempotency-Key em TODA tentativa. O
+   retry NUNCA regenera a chave nem altera o corpo (hash do backend).
+d) Servico responsavel pela sincronizacao (OutboxService.sincronizar-
+   Pendentes), com retorno da quantidade confirmada.
+e) Tentativa de envio imediata ao chamar o servico; falha de rede mantem
+   a operacao na fila; sucesso confirmado pelo backend conclui/descarta.
+f) Tratamento basico de erro de rede (excecao capturada, tentativas++,
+   ultimo_erro registrado, lote interrompido preservando a fila).
+g) Unica operacao REAL conectada nesta fundacao: criacao de coleta
+   (POST /api/v1/collections) — endpoint que ja aceita X-Idempotency-Key
+   desde a Missao 12 e devolve replay deterministico (200 com resposta
+   armazenada; mesma chave + payload diferente => 409).
+
+5. TESTES (flutter test — 22/22 verdes):
+Suíte pre-existente intacta: 12 testes (models_test.dart e
+widget_test.dart) continuam passando. Novos 10 testes
+(test/outbox_test.dart), um por requisito obrigatorio:
+1. operacao criada offline fica PENDENTE na fila local;
+2. operacao pendente sobrevive a recriacao do servico (fechou/abriu app)
+   via SharedPreferences mockadas;
+3. chave de idempotencia gerada e UUIDv4 (regex de versao/variante);
+4. retry reutiliza EXATAMENTE a mesma chave e o mesmo corpo;
+5. falha de rede mantem a operacao PENDENTE (tentativas=1, erro salvo);
+6. sucesso confirmado pelo backend conclui e remove a operacao;
+7. duas operacoes agendadas possuem chaves distintas;
+8. replay do backend nao duplica o efeito (resposta perdida apos
+   processamento => retry com mesma chave => replay 200 => criacoes=1);
+9. sincronizacao executada novamente nao reenvia operacao concluida;
+10. fila permanece integra quando uma operacao falha (ordem cronologica
+    preservada, seguintes nao enviados fora de ordem e intactos; apos a
+    rede voltar, todas seguem em ordem com suas proprias chaves).
+flutter analyze: No issues found.
+
+6. DECISOES DE IMPLEMENTACAO:
+- shared_preferences como armazenamento: fila pequena em JSON unico;
+  SQLite/Drift so faz sentido quando o dominio offline crescer (FASE 10
+  avanca). Sem abstracao prematura.
+- Sucesso = remover item (doc 09 §3.1.5 marca SINCRONIZADO e descarta):
+  marcacao gravada e depois descarte; queda entre os dois passos e
+  recuperada na passagem seguinte.
+- Falha (rede OU HTTP nao-2xx) interrompe o lote: preserva ordem
+  estrita; politica de erros definitivos 4xx ficou como pendencia.
+- Disparo automatico ao restabelecer conexao NAO implementado: exigiria
+  nova dependencia (connectivity_plus); hoje quem chama decide quando
+  sincronizar. Registrado como pendencia.
+- Token Bearer opcional via callback obterToken (POST /collections exige
+  JWT no backend); integracao com autenticacao do app e futura.
+
+7. CHECKLIST DA MISSAO:
+- [x] Dados pendentes sobrevivem ao fechamento do app? Sim (teste 2).
+- [x] Cada operacao tem UUIDv4 proprio? Sim (testes 1, 3 e 7).
+- [x] Retry reutiliza a mesma chave? Sim (testes 4 e 10).
+- [x] Falha de rede nunca apaga operacao pendente? Sim (testes 5 e 10).
+- [x] Sucesso confirmado remove/conclui item? Sim (testes 6, 8 e 9).
+- [x] Ciclo completo provado com operacao real (criacao de coleta)? Sim.
+- [x] Testes automatizados cobrindo os 10 requisitos? Sim (22/22 verdes).
+- [x] Backend intocado (sem rotas/migrations/regras novas)? Sim.
+- [x] Sem secrets no codigo? Sim (nenhum token/credencial gravado).
+- [x] Codigo enxuto (sem abstracoes sem consumidor real)? Sim (3 arquivos
+      + typedef injetavel usado pelos testes).
+
+8. NAO FOI FEITO (fora do escopo desta missao):
+- UI completa de operacao offline / indicador visual de pendencias.
+- Dashboard administrativa, notificacoes, WebSocket, WhatsApp, Pix,
+  reputacao (proibidos iniciar nesta missao).
+- Demais operacoes offline (pneus, conclusao e finalizacao da conferencia)
+  usando a fundacao: integracoes futuras, uma por vez.
+- Listener de conectividade e disparo automatico de sync.
+- Alteracoes no backend (nenhuma necessaria: contratos de idempotencia
+  das Missoes 12/13 ja atendem o fluxo).
+
+Proxima etapa sugerida: Missao 17 (a definir), priorizando a adocao da
+fundacao pelas demais operacoes do doc 09 §2 e o disparo automatico de
+sincronizacao.

@@ -1,0 +1,98 @@
+RELATORIO DA MISSAO 17 - INTEGRACAO OUTBOX x CONFERENCIA
+(Relatorio_23.txt)
+
+1. ARQUIVOS CRIADOS:
+- Relatorio_23.txt (este relatorio).
+
+2. ARQUIVOS ALTERADOS:
+- meu_app_coleta_pneus/lib/core/outbox/outbox_service.dart — tres novos
+  metodos de dominio reutilizando integralmente agendar()/OutboxStore/
+  OperacaoPendente (nenhum mecanismo de fila/retry/idempotencia recriado):
+  a) agendarRegistroPneus(coletaId, pneus) ->
+     POST /api/v1/collections/{id}/conferencia/pneus,
+     corpo {"pneus": [...]} (RegistroPneusRequest).
+  b) agendarConclusaoConferencia(coletaId, quantidadeConferida,
+     quantidadeColetada) -> POST .../conferencia/concluir, corpo
+     {"quantidade_conferida", "quantidade_coletada"}
+     (ConclusaoConferenciaRequest; quantidades independentes, AGENTS §4.5).
+  c) agendarFinalizacaoColeta(coletaId) -> POST .../finalizar, corpo {}
+     VAZIO ESTRITO (FinalizacaoRequest sem campos; nenhum valor financeiro
+     aceito do cliente — docs 07 §1 e AGENTS §3).
+- meu_app_coleta_pneus/test/outbox_test.dart — novo grupo com 6 testes da
+  integracao; helper dos testes da Missao 16 alinhado ao contrato real.
+- STATUS_DO_PROJETO.md — missao 17, decisao critica e pendencias.
+- meu_app_coleta_pneus/README.md — operacoes offline suportadas.
+
+NENHUM arquivo do backend foi criado ou alterado: nenhuma rota nova,
+nenhuma migration, nenhum mecanismo de idempotencia recriado (PNEUS/
+CONCLUSAO/FINALIZACAO ja protegidos pelas Missoes 12/13 e apenas
+CONSUMIDOS aqui via X-Idempotency-Key).
+
+3. DEPENDENCIAS ADICIONADAS/REMOVIDAS:
+Nenhuma.
+
+4. CONFLITO CODIGO x CONTRATO DETECTADO E RESOLVIDO:
+O helper agendarCriacaoDeColeta da Missao 16 montava payload que nao
+existe no backend (itens com "categoria" e "descricao_item_json";
+data_agendada sem fuso horario). O ColetaCreateRequest real
+(extra="forbid") exige itens {marca, dimensao, quantidade_declarada,
+observacao?} e data ISO 8601 COM offset. Esse payload receberia 422.
+Como o transporte nos testes e injetado, o desvio nunca foi exercitado
+contra o schema real. CORRECAO (nesta missao): assinatura agora recebe
+DateTime e envia toUtc().toIso8601String(); itens seguem o contrato.
+Nenhum dado real chegou a ser enviado ao backend antes da correcao
+(o servico padrao ainda nao esta conectado as telas).
+
+5. REGRAS ATENDIDAS:
+a) Reuso integral de OutboxStore/OutboxService/OperacaoPendente.
+b) Cada operacao das quatro tem UUIDv4 PROPRIO (testes provam pares
+   distintos e formato v4).
+c) UUID permanece como X-Idempotency-Key em TODOS os retries (provas na
+   Missao 16 + teste de retomada desta missao).
+d) Payload identico em cada retry (strings capturadas comparadas).
+e) Nenhum efeito duplicado no backend simulado: cada chave gera criacao
+   unica; replays devolvem resposta armazenada (200) sem criar de novo.
+f) Falha mantem operacao PENDENTE (tentativas++ e ultimo_erro salvos).
+g) Sucesso 200/201 marca SINCRONIZADA e remove da fila.
+h) Ordem cronologica preservada (pneus -> concluir -> finalizar).
+i) Sem mudanca de regras de negocio, sem migration, sem UI e sem sync
+   automatico. Sem dependencias novas. Codigo enxuto (3 wrappers finos).
+
+6. TESTES (flutter test — 28/28 verdes):
+Suíte cresceu de 22 para 28 (12 pre-existentes + 10 da Missao 16 + 6
+novos). Novos testes, um por requisito de cobertura:
+1. registro de pneus offline fica pendente com caminho/corpo corretos;
+2. conclusao offline fica pendente com quantidades independentes;
+3. finalizacao offline fica pendente com corpo vazio estrito;
+4. as tres operacoes possuem chaves UUIDv4 distintas entre si;
+5. ciclo completo sincroniza EM ORDEM (pneus, concluir, finalizar) e
+   remove cada operacao apos sucesso;
+6. falha de rede no meio do lote preserva a fila inteira (seguintes com
+   tentativas=0), retomada posterior reusa MESMAS chaves/MESMOS payloads
+   na MESMA ordem, cada chave produz efeito unico no backend (replay nao
+   duplica) e passagem extra nao reenvia nada.
+flutter analyze: No issues found.
+Backend inalterado => suíte unittest do backend nao se aplica nesta
+missao (ultima execucao completa: Missao 15, Ran 184 tests OK).
+
+7. DECISOES DE IMPLEMENTACAO:
+- Metodos de dominio finos sobre agendar(): sem registry/estrategias;
+  cada metodo fixa caminho+corpo conforme o contrato Pydantic real.
+- finalizar envia literal {} (o endpoint declara _dados: Finalizacao-
+  Request; ausencia de corpo daria 422).
+- conclusao expoe apenas os campos obrigatorios; justificativa/fotos de
+  divergencia continuam sendo adicionadas pelo chamador via agendar()
+  quando existirem fluxos que as produzam (evita parametro morto hoje).
+- Nenhuma validacao duplicada no cliente: backend segue autoridade
+  absoluta (AGENTS §3); o outbox apenas transporta.
+
+8. PENDENCIAS REGISTRADAS (STATUS §8 atualizado):
+- Disparo automatico de sincronizacao (conectividade/ciclo de vida).
+- Politica para erros HTTP definitivos (4xx) na fila outbox.
+- UI de acompanhamento da fila (fora de escopo).
+- Fotos/divergencias e upload de imagens: missoes futuras.
+- Integracao dos metodos de dominio as telas Flutter existentes (as telas
+  atuais ainda usam o prototipo Firebase; migracao e proxima etapa natural
+  mas NAO foi iniciada — ordem de parada da Missao 17).
+
+Proxima etapa sugerida: Missao 18 (a definir).

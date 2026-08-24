@@ -27,6 +27,7 @@ from backend.db.models import (
 )
 
 from .rbac import require_roles
+from .validacao import exigir_json_compacto
 
 router = APIRouter(prefix="/api/v1/collections", tags=["collections"])
 
@@ -34,6 +35,13 @@ NAO_ENCONTRADO = "Recurso não encontrado."
 
 # Padrão documentado (docs 03/06). Configuração pelo Administrador = missão futura.
 LIMITE_ALERTA_IDADE_ANOS = 7.0
+
+# Limites de volume por requisição (doc 08 §4.1). Coletas reais citadas nos
+# docs ficam na casa de centenas de pneus; os tetos dão folga e rejeitam
+# payloads capazes de exaurir memória/CPU.
+MAX_ITENS_DECLARADOS = 200
+MAX_PNEUS_POR_LOTE = 2000
+MAX_QUANTIDADE = 1_000_000
 
 _DOT_FORMATO = re.compile(r"^\d{4}$")
 
@@ -54,7 +62,7 @@ class ItemDeclaradoRequest(BaseModel):
 
     marca: str = Field(min_length=1, max_length=100)
     dimensao: str = Field(min_length=1, max_length=50)
-    quantidade_declarada: int = Field(gt=0)
+    quantidade_declarada: int = Field(gt=0, le=MAX_QUANTIDADE)
     observacao: Optional[str] = Field(default=None, max_length=1000)
 
 
@@ -63,7 +71,12 @@ class ColetaCreateRequest(BaseModel):
 
     endereco_origem_json: dict = Field(min_length=1)
     data_agendada: datetime
-    itens: list[ItemDeclaradoRequest] = Field(min_length=1)
+    itens: list[ItemDeclaradoRequest] = Field(min_length=1, max_length=MAX_ITENS_DECLARADOS)
+
+    @field_validator("endereco_origem_json")
+    @classmethod
+    def limitar_endereco(cls, value: dict) -> dict:
+        return exigir_json_compacto("endereco_origem_json", value)
 
     @field_validator("data_agendada")
     @classmethod
@@ -106,16 +119,21 @@ class PneuConferidoRequest(BaseModel):
 class RegistroPneusRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    pneus: list[PneuConferidoRequest] = Field(min_length=1)
+    pneus: list[PneuConferidoRequest] = Field(min_length=1, max_length=MAX_PNEUS_POR_LOTE)
 
 
 class ConclusaoConferenciaRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    quantidade_conferida: int = Field(ge=0)
-    quantidade_coletada: int = Field(ge=0)
+    quantidade_conferida: int = Field(ge=0, le=MAX_QUANTIDADE)
+    quantidade_coletada: int = Field(ge=0, le=MAX_QUANTIDADE)
     justificativa_divergencia: Optional[str] = Field(default=None, max_length=2000)
     fotos_divergencia_json: Optional[dict] = None
+
+    @field_validator("fotos_divergencia_json")
+    @classmethod
+    def limitar_fotos(cls, value: Optional[dict]) -> Optional[dict]:
+        return exigir_json_compacto("fotos_divergencia_json", value) if value is not None else None
 
 
 class ContestacaoRequest(BaseModel):

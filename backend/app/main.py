@@ -1,5 +1,7 @@
 # backend/app/main.py
-from fastapi import FastAPI
+import os
+
+from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from sqlalchemy import select
 
@@ -20,6 +22,45 @@ app.include_router(ownership_router)
 app.include_router(collections_router)
 app.include_router(pricing_router)
 app.include_router(admin_router)
+
+# Rejeita corpos excessivos antes de chegarem às rotas (413). Clientes reais
+# enviam Content-Length; transfer-encoding chunked fica como pendência.
+LIMITE_CORPO_BYTES = 1_048_576
+
+# HSTS somente quando HTTPS é garantido no ambiente (implantação ativa via
+# variável); desenvolvimento local HTTP e testes permanecem sem o cabeçalho.
+HSTS_HABILITADO = os.getenv("HSTS_ENABLED", "").lower() in ("1", "true", "yes")
+
+_CABECALHOS_API = {
+    "X-Content-Type-Options": "nosniff",
+    "X-Frame-Options": "DENY",
+    "Referrer-Policy": "no-referrer",
+    "Cache-Control": "no-store",
+    # API REST JSON sem HTML próprio; /docs recebe política própria abaixo.
+    "Content-Security-Policy": "default-src 'none'; frame-ancestors 'none'",
+}
+_ROTAS_DOCS = ("/docs", "/redoc", "/openapi.json")
+
+
+@app.middleware("http")
+async def hardening_http(request: Request, call_next):
+    content_length = request.headers.get("content-length")
+    if content_length is not None and content_length.isdigit() and int(content_length) > LIMITE_CORPO_BYTES:
+        resposta = JSONResponse(
+            status_code=413,
+            content={"detail": "Corpo da requisição excede o tamanho máximo permitido."},
+        )
+    else:
+        resposta = await call_next(request)
+    cabecalhos = _CABECALHOS_API
+    if request.url.path.startswith(_ROTAS_DOCS):
+        # Swagger UI precisa carregar scripts/estilos próprios.
+        cabecalhos = {k: v for k, v in _CABECALHOS_API.items() if k != "Content-Security-Policy"}
+    for cabecalho, valor in cabecalhos.items():
+        resposta.headers[cabecalho] = valor
+    if HSTS_HABILITADO:
+        resposta.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+    return resposta
 
 
 @app.get("/health")
