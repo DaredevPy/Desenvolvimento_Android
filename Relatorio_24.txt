@@ -1,0 +1,112 @@
+RELATORIO DA MISSAO 18 - SINCRONIZACAO AUTOMATICA DO OUTBOX
+(Relatorio_24.txt)
+
+1. ARQUIVOS CRIADOS:
+- meu_app_coleta_pneus/lib/core/outbox/sincronizacao_automatica_outbox.dart:
+  classe SincronizacaoAutomaticaOutbox (WidgetsBindingObserver) — gatilho
+  automático da sincronização.
+- meu_app_coleta_pneus/test/sincronizacao_automatica_test.dart: 7 testes da
+  Missão 18 (gatilhos, concorrência e preservação da fila).
+- Relatorio_24.txt (este relatorio).
+
+2. ARQUIVOS ALTERADOS:
+- meu_app_coleta_pneus/lib/main.dart: instancia OutboxService (base URL via
+  --dart-define=API_BASE_URL, padrão http://localhost:8000) e inicia o
+  disparo automático com SincronizacaoAutomaticaOutbox.iniciar().
+- meu_app_coleta_pneus/pubspec.yaml / pubspec.lock: dependência nova
+  connectivity_plus ^7.3.1 (+ transitivas dela; flutter pub add).
+- Arquivos gerados automaticamente pelo pub get para o novo plugin:
+  GeneratedPluginRegistrant (.java/.m) e .flutter-plugins-dependencies.
+- STATUS_DO_PROJETO.md: missão 18 concluída, decisão crítica e pendências.
+- README.md do app: novo arquivo do outbox, dependência e base URL.
+
+NENHUM arquivo do backend foi criado ou alterado: nenhuma rota nova,
+nenhuma migration, nenhum contrato HTTP modificado.
+
+3. DEPENDENCIAS ADICIONADAS/REMOVIDAS:
+- ADICIONADA: connectivity_plus ^7.3.1 (fluttercommunity/plus plugins).
+  JUSTIFICATIVA: indispensável — não existe mecanismo puro do SDK Flutter
+  para detectar reconexão nos três alvos (Android/iOS/Web); dart:io não
+  compila na Web. O doc 09 §3.3 já previa "Connectivity Listener" como parte
+  da arquitetura de sincronização. Stream injetada no construtor, então os
+  testes NÃO tocam no plugin (sem mock de platform channel).
+- REMOVIDAS: nenhuma.
+
+4. IMPLEMENTACAO:
+- Três gatilhos externos e pontuais, todos chamando exclusivamente
+  OutboxService.sincronizarPendentes():
+  a) início do app: iniciar() registra os listeners e faz a 1ª tentativa;
+  b) retorno ao primeiro plano: didChangeAppLifecycleState dispara apenas em
+     AppLifecycleState.resumed (inactive/hidden/pausado/detached ignorados);
+  c) reconexão: Connectivity().onConnectivityChanged
+     (Stream<List<ConnectivityResult>>); dispara somente quando a lista
+     contém algo != none — evento [none] (queda de rede) NÃO gera tentativa.
+- Guarda anti-concorrência (_sincronizando): disparo recebido durante uma
+  passagem em curso é IGNORADO (uma única passagem por vez); a guarda é
+  liberada no finally, então eventos posteriores voltam a sincronizar.
+- Sem timer/retry próprio: nenhuma tentativa é reagendada por falha — só um
+  NOVO evento externo tenta de novo (impossível loop infinito). Erro
+  inesperado fora do fluxo normal (ex.: persistência local) é absorvido
+  fire-and-forget sem derrubar o app; a fila permanece como está.
+- descartar() existe para isolamento entre testes (remove observer + cancela
+  assinatura); no app o objeto vive até o fim do processo.
+- main.dart: token de sessão ainda NÃO é anexado (não há serviço de sessão
+  integrado); requisições automáticas saem sem Authorization até missão de
+  login — pendência registrada.
+
+5. TESTES E RESULTADO:
+- Novos testes (test/sincronizacao_automatica_test.dart), cobrindo a lista
+  obrigatória da missão:
+  1) inicia com fila pendente -> sincroniza sozinho e remove após 201;
+  2) reconexão ([wifi]) dispara; [none] NÃO dispara; retry automático usa a
+     MESMA X-Idempotency-Key;
+  3) retorno ao aplicativo (resumed) dispara; inactive/hidden/paused NÃO
+     disparam;
+  4) fila vazia e operação já concluída: nenhum gatilho gera requisição;
+  5) gatilhos simultâneos durante passagem bloqueada -> UMA única passagem
+     (chaves [A,B] em ordem, sem segunda entrada); guarda liberada depois;
+  6) falha preserva a fila (pendente, tentativas++) e NÃO existe retry
+     espontâneo (tempo passando sem eventos => zero envios);
+  7) retomada após falha mantém ORDEM, MESMA chave e MESMO payload no ciclo
+     completo pneus -> concluir -> finalizar (corpos comparados byte a byte).
+- RESULTADO FINAL: flutter analyze SEM issues; flutter test = 35/35 OK
+  (28 anteriores intactas + 7 novas).
+
+6. PROBLEMAS/CORRECOES DURANTE A MISSAO:
+- Teste "retorno ao aplicativo" falhou na 1ª execução porque agendava a
+  operação DEPOIS de iniciar(): o disparo inicial rodou com fila vazia
+  (comportamento CORRETO do produto) e nenhum outro evento ocorreu.
+  Correção foi no teste (cenário realista: operação pendente antes do
+  start). Nenhum ajuste no código de produção foi necessário.
+- voltarAoAplicativo() dos testes passa por paused antes de resumed: o
+  binding ignora notificação de estado repetido, então resumed direto seria
+  no-op se o binding já estivesse resumed.
+
+7. DECISOES:
+- Classe separada (SincronizacaoAutomaticaOutbox) em vez de acoplar ciclo de
+  vida/connectividade ao OutboxService: responsabilidade distinta (política
+  de disparo x transporte/fila) e testabilidade sem platform channels.
+- Guarda por skip (e não enfileiramento de disparo): simples e suficiente;
+  disparo perdido durante passagem em curso é coberto pelo próximo evento
+  (resume/reconexão), sem risco de cascata.
+- Filtragem [none] no gatilho de rede: evita requisição fadada à falha a
+  cada queda de sinal (fila preservada; doc 09 §3.4).
+- Base URL por --dart-define (String.fromEnvironment): nenhum secret, valor
+  definido em build/implantação; default localhost para dev local.
+- connectivity_plus injetável como Stream<List<ConnectivityResult>>: segue a
+  API real da v7 (lista nunca vazia; none isolado significa offline).
+
+8. PENDENCIAS REGISTRADAS (STATUS_DO_PROJETO.md §8):
+- Token de sessão não anexado às requisições automáticas (aguarda serviço de
+  sessão/login; hoje o backend responde 401 e a fila permanece PENDENTE).
+- Política definitiva para erros HTTP 4xx na fila (hoje: permanecem
+  PENDENTES e interrompem o lote).
+- UI de acompanhamento da fila (fora de escopo); fotos/PDF seguem futuros.
+
+9. CONFIRMACAO:
+- Backend FastAPI/PostgreSQL INTACTO (git status: nenhuma alteração em
+  backend/). Nenhuma rota nova, nenhum contrato HTTP alterado, nenhum
+  mecanismo recriado (fila/retry/idempotência das Missões 16/17 reutilizados
+  integralmente).
+
+TOTAL DE TESTES: 35 (28 pré-existentes + 7 novos) — TODOS PASSANDO.

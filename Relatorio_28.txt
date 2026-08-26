@@ -1,0 +1,66 @@
+RELATORIO DA MISSAO 21 - TELA DE LOGIN E INTEGRACAO DA SESSAO
+(Relatorio_28.txt)
+
+1. ARQUIVOS CRIADOS:
+- meu_app_coleta_pneus/lib/core/sessao/tela_login.dart:
+  TelaLogin — StatefulWidget com campos e-mail/senha, botao Entrar,
+  estado de carregamento, mensagens de erro (401/rede), integracao
+  exclusiva com ServicoSessao.entrar(). Navega para '/principal' apos
+  sucesso.
+- meu_app_coleta_pneus/test/tela_login_test.dart: 6 testes da Missao 21
+  (campos, validacao, login valido, 401, erro rede, carregamento).
+- Relatorio_28.txt (este relatorio).
+
+2. ARQUIVOS ALTERADOS:
+- meu_app_coleta_pneus/lib/main.dart:
+  - MyApp agora recebe ServicoSessao via construtor.
+  - initialRoute decide entre '/login' (sem token) e '/principal' (com token).
+  - Rotas: '/login' -> TelaLogin, '/principal' -> TelaPrincipal.
+  - TelaPrincipal agora e const (sem estado mutavel).
+  - Removido: FirebaseService (dependencia nao utilizada neste escopo).
+  - Removido: import de firebase_service.dart.
+  - Mantido: carregar() ANTES de criar OutboxService (ordem garantida).
+
+3. INTEGRACAO REALIZADA:
+- TelaLogin usa EXCLUSIVAMENTE ServicoSessao.entrar() — nenhum
+  mecanismo adicional de autenticacao.
+- ServicoSessao injetada via construtor (testavel com duble).
+- Apos login, navigator.pushReplacementNamed('/principal') — o usuario
+  nao volta ao login com botao voltar.
+- carregar() continua restaurando token no arranque (main.dart linha 22).
+- Token NUNCA e exibido na UI.
+- Senha NUNCA e persistida ou impressa.
+
+4. TESTES:
+- 6 novos testes em test/tela_login_test.dart:
+  1) Tela exibe campos e-mail, senha e botao Entrar;
+  2) Validacao: campos vazios mostram erro;
+  3) Login valido navega para '/principal';
+  4) 401 mostra 'E-mail ou senha invalidos.';
+  5) Erro de conexao mostra 'Erro de conexao. Tente novamente.';
+  6) Estado de carregamento (CircularProgressIndicator) durante login.
+- Todos os testes usam transporte HTTP injetado (sem servidor real).
+
+5. RESULTADO:
+- flutter analyze: No issues found!
+- flutter test: 49/49 OK (43 anteriores + 6 novas)
+
+6. PROBLEMAS ENCONTRADOS:
+- NENHUM problema durante implementacao.
+- Teste inicial com find.text('Entrar') encontrou 2 widgets (AppBar +
+  botao). Corrigido para find.byWidgetPredicate(ElevatedButton).
+
+7. PENDENCIAS:
+- Logout visual (botao/sair) — nao implementado (fora do escopo).
+- FlutterSecureStorage: hardening Android/iOS/Web — pendencia existente.
+- Refresh token — pendencia existente.
+
+8. CONFIRMACAO:
+- Backend FastAPI/PostgreSQL INTACTO (nenhuma alteracao).
+- Nenhuma dependencia nova adicionada.
+- Nenhuma regra de negocio alterada.
+- Codigo existente (ServicoSessao, Outbox, SincronizacaoAutomatica)
+  permaneceu 100% funcional.
+- Todas as 49 testes passando.
+
+TOTAL DE TESTES: 49 (43 pre-existentes + 6 novas) — TODAS PASSANDO.

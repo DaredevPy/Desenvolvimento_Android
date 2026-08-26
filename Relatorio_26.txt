@@ -1,0 +1,149 @@
+RELATORIO GERAL DO PROJETO - ESTADO DAS ETAPAS
+(Relatorio_26.txt)
+
+1. RESUMO DO ESTADO ATUAL
+
+Sistema de coleta e gerenciamento de pneus com aplicativo multiplataforma
+(Flutter) e backend assíncrono (FastAPI), cobrindo declaração de carga,
+conferência presencial, validação de DOT, financeiro desacoplado e
+administração com auditoria.
+
+Arquitetura:
+  Flutter/Dart (App Único Multiplataforma: Android, iOS, Web)
+      ↓ (REST API JSON sobre HTTPS)
+  FastAPI / Python 3.11+ (Pydantic v2 + SQLAlchemy)
+      ↓
+  PostgreSQL 15+ (Banco Relacional Transacional)
+
+2. MISSÕES CONCLUÍDAS (01 a 18)
+
+| Missão | Descrição | Status |
+|--------|-----------|--------|
+| 01 | Preparação da fundação Flutter | Concluída |
+| 02 | Modelagem do domínio | Concluída |
+| 02.1 | Correção da identidade individual dos pneus e regras de preço | Concluída |
+| 03 | Fundação PostgreSQL (migrations + modelos ORM + testes) | Concluída |
+| 03.5 | Preparação para continuidade entre modelos de IA | Concluída |
+| 04 | Fundação FastAPI (app mínima + /health + /health/db + testes) | Concluída |
+| 05 | Autenticação e identidade do usuário (Argon2id + JWT + /api/v1/auth) | Concluída |
+| 06 | Fundação RBAC (require_roles + 401/403 + endpoints de teste) | Concluída |
+| 07 | Perfis operacionais e ownership (CRUD próprio CLIENTE/PRESTADOR) | Concluída |
+| 07.1 | Ownership e isolamento de dados (helper exigir_dono + provas IDOR) | Concluída |
+| 08 | Domínio de coletas: máquina de estados, aceite concorrente e ownership | Concluída |
+| 09 | Conferência da coleta e registro individual dos pneus | Concluída |
+| 10 | Financeiro: price_rules (ADMIN + auditoria), fechamento com snapshot imutável | Concluída |
+| 11 | Fundação backend da Dashboard Administrativa (/api/v1/admin somente leitura) | Concluída |
+| 12 | Idempotência da criação de coletas (X-Idempotency-Key + replay determinístico) | Concluída |
+| 13 | Outbox: idempotência em pneus/conclusão/finalização (tabela idempotency_records) | Concluída |
+| 14 | Contestação da coleta: FINALIZADA → CONTESTADA com auditoria no servidor | Concluída |
+| 15 | Hardening de segurança da API: rate limiting, cabeçalhos HTTP e limites de entrada | Concluída |
+| 16 | Fundação Outbox Offline no Flutter (fila persistente + retry seguro com X-Idempotency-Key) | Concluída |
+| 17 | Integração do Outbox com a conferência (pneus/concluir/finalizar offline) | Concluída |
+| 18 | Disparo automático da sincronização do Outbox (início/retorno do app + reconexão) | Concluída |
+
+3. MISSÃO 19 - SESSÃO E AUTENTICACAO NO FLUTTER (Conforme Relatorio_25.txt)
+
+Arquivos criados:
+- meu_app_coleta_pneus/lib/core/sessao/servico_sessao.dart:
+  ServicoSessao (entrar/carregar/sair/tokenAtual), ArmazenamentoSessao
+  (interface), EnviarAutenticacao (typedef), RespostaHttp (DTO),
+  CredenciaisInvalidasExcecao.
+- meu_app_coleta_pneus/lib/core/sessao/armazenamento_seguro_sessao.dart:
+  ArmazenamentoSeguroSessao — implementacao sobre FlutterSecureStorage
+  (Android Keystore / iOS Keychain / melhor-esforco Web).
+- meu_app_coleta_pneus/test/sessao_test.dart: 8 testes da Missao 19
+  (5 contratos de login + 3 integracao Sessao x Outbox).
+
+Arquivos alterados:
+- meu_app_coleta_pneus/lib/main.dart: instanciacao de ServicoSessao com
+  ArmazenamentoSeguroSessao, chamada sessao.carregar() antes do Outbox,
+  obterToken: () => sessao.tokenAtual no OutboxService.
+- meu_app_coleta_pneus/lib/core/outbox/outbox_service.dart: assinatura de
+  obterToken ampliada de String Function()? para String? Function()? (token
+  pode ser nulo antes do login).
+- meu_app_coleta_pneus/pubspec.yaml / pubspec.lock: dependencia nova
+  flutter_secure_storage ^11.0.0.
+
+Dependência adicionada:
+- flutter_secure_storage ^11.0.0 (armazenamento seguro para tokens JWT)
+
+Total de testes: 43 (35 anteriores + 8 novas) — TODAS PASSANDO.
+
+4. MISSÃO ATUAL
+
+Nenhuma missão em execução.
+
+5. PRÓXIMA MISSÃO
+
+Missão 20 — a ser definida (nenhuma funcionalidade iniciada).
+
+6. DECISÕES CRÍTICAS ATIVAS
+
+- Identidade única do pneu é o UUID interno; número de fogo é identificação física operacional.
+- DOT (semana/ano) nunca é identificador único; idade calculada no backend.
+- Duplicidade de número de fogo na MESMA coleta: BLOQUEIO definitivo.
+- Financeiro com snapshots imutáveis por coleta encerrada.
+- Único caminho para FINALIZADA é POST /collections/{id}/finalizar.
+- Sobreposição de faixas ativas do mesmo perfil_alvo é bloqueada na criação/alteração.
+- API administrativa é SOMENTE LEITURA para coletas/auditoria.
+- Idempotência: POST /collections aceita X-Idempotency-Key (UUIDv4).
+- Outbox: pneus, conclusão e finalização também aceitam X-Idempotency-Key.
+- Contestação: POST /collections/{id}/contestar executa apenas FINALIZADA→CONTESTADA.
+- Hardening: rate limiting por IP, cabeçalhos HTTP, limites de entrada.
+- Fundação Outbox Offline: fila local PERSISTENTE com retry seguro.
+- Disparo automático: início do app, retorno ao primeiro plano e reconexão.
+- Sessão: JWT persistido em armazenamento seguro (FlutterSecureStorage).
+
+7. PENDÊNCIAS PRINCIPAIS
+
+Backend:
+- Fórmula exata de conversão DOT para idade decimal.
+- Limite de idade para alerta configurável pelo Administrador.
+- Esquema formal das evidências fotográficas.
+- Provedor oficial da API de mensagens WhatsApp.
+- Política formal de senha.
+- Processo de provisionamento de usuários ADMINISTRADOR.
+- Revogação/refresh de tokens JWT.
+- Política de mascaramento de dados sensíveis.
+- Formato/política de validação de telefone.
+- Rate limiting por usuário autenticado.
+- CORS restrito aguarda origens oficiais do Flutter Web.
+
+Flutter:
+- Tela de login no Flutter (UI para entrada de email+senha).
+- hardening de flutter_secure_storage (Android/iOS/Web).
+- UI de acompanhamento da fila do Outbox.
+- Política para erros HTTP definitivos (4xx) na fila.
+
+8. RELATÓRIOS HISTÓRICOS
+
+- Relatorio.txt, Relatorio_2.txt a Relatorio_6.txt
+- Relatorio_10.txt a Relatorio_24.txt (missões de backend e Flutter)
+- Relatorio_25.txt (Missão 19 - Sessão e Autenticação no Flutter)
+- Relatorio_26.txt (este relatório - Estado geral do projeto)
+
+9. REGRAS INQUEBRÁVEIS
+
+1. Flutter/Dart é o frontend.
+2. FastAPI/Python é o backend.
+3. PostgreSQL é o banco.
+4. Backend é autoridade das regras (revalida tudo no servidor).
+5. Cliente, Prestador e Administrador possuem papéis separados.
+6. Cada pneu possui registro individual com UUID próprio.
+7. DOT NÃO é identificador único.
+8. Idade do DOT é calculada pelo backend.
+9. Valor do cliente e valor do prestador são independentes.
+10. Preços são configurados pelo Administrador.
+11. Coletas encerradas preservam snapshots financeiros imutáveis.
+12. Código deve ser enxuto e sem abstrações desnecessárias.
+
+10. CONCLUSÃO
+
+O projeto encontra-se em estado estável com 18 missões concluídas
+mais a Missão 19 (Sessão e Autenticação no Flutter). O backend
+FastAPI/PostgreSQL está completo e funcional. O Flutter possui
+a fundação do Outbox offline com sincronização automática e
+agora conta com serviço de sessão e armazenamento seguro para tokens.
+
+Próxima etapa (Missão 20) aguarda definição. O sistema está
+pronto para continuidade com qualquer modelo de IA.

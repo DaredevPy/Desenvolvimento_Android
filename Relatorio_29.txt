@@ -1,0 +1,62 @@
+RELATORIO DA MISSAO 22 - LOGOUT SEGURO E ENCERRAMENTO DA SESSAO
+(Relatorio_29.txt)
+
+1. ARQUIVOS CRIADOS:
+- meu_app_coleta_pneus/test/logout_test.dart: 5 testes da Missao 22
+  (botao existe, sair() chamado, token limpo, navegacao /login,
+  outbox intacto, token antigo nao reutilizado).
+- Relatorio_29.txt (este relatorio).
+
+2. ARQUIVOS ALTERADOS:
+- meu_app_coleta_pneus/lib/main.dart:
+  - TelaPrincipal agora recebe ServicoSessao via construtor.
+  - Metodo _sair() chama sessao.sair() e navega para /login com
+    pushReplacementNamed (impede retorno pelo botao voltar).
+  - AppBar possui IconButton com Icons.logout (tooltip 'Sair').
+  - Nenhuma outra alteracao.
+
+3. COMPORTAMENTO IMPLEMENTADO:
+- Botao logout na AppBar (icone Icons.logout).
+- Ao tocar: chama ServicoSessao.sair() (limpa memoria + armazenamento).
+- Apos sair: navega para /login com pushReplacementNamed.
+- pushReplacementNamed remove a rota /principal da pilha — botao
+  voltar NAO retorna a tela principal.
+- Outbox permanece intacto (operacoes pendentes nao sao apagadas).
+- Token atual fica null apos logout — sincronizacoes futuras enviam
+  sem Authorization (backend responde 401, operacao permanece pendente).
+- Nenhum JWT/senha exposto na UI.
+- Nenhum mecanismo novo de autenticacao criado.
+
+4. TESTES:
+- 5 novos testes em test/logout_test.dart:
+  1) Botao de logout existe na AppBar;
+  2) Tap no logout chama sair() e limpa token (memoria + armazenamento);
+  3) Apos logout navega para /login;
+  4) Outbox pendente permanece intacto apos logout;
+  5) Token antigo nao e reutilizado apos logout.
+- Todos usam SharedPreferences.setMockInitialValues({}) e transporte
+  HTTP injetado (sem servidor real).
+
+5. RESULTADO:
+- flutter analyze: No issues found!
+- flutter test: 54/54 OK (49 anteriores + 5 novas)
+
+6. PROBLEMAS ENCONTRADOS:
+- NENHUM.
+- Teste do outbox pendente precisou de SharedPreferences mock
+  (setMockInitialValues) para funcionar — padrao ja existente
+  nos testes do outbox_test.dart.
+
+7. PENDENCIAS:
+- NENHUMA nova. As pendencias existentes (STATUS_DO_PROJETO.md §8)
+  permanecem inalteradas.
+
+8. CONFIRMACAO:
+- Backend FastAPI/PostgreSQL INTACO (nenhuma alteracao).
+- Nenhuma dependencia nova adicionada.
+- Nenhuma regra de negocio alterada.
+- Codigo existente (ServicoSessao, Outbox, SincronizacaoAutomatica,
+  TelaLogin) permaneceu 100% funcional.
+- Todas as 54 testes passando.
+
+TOTAL DE TESTES: 54 (49 pre-existentes + 5 novas) — TODAS PASSANDO.

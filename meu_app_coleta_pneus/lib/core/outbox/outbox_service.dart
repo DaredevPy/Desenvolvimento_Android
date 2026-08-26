@@ -28,7 +28,7 @@ class OutboxService {
     OutboxStore? store,
     EnviarRequisicao? enviar,
     String baseUrl = '',
-    String Function()? obterToken,
+    String? Function()? obterToken,
   })  : _store = store ?? OutboxStore(),
         _enviar = enviar,
         _baseUrl = baseUrl,
@@ -37,7 +37,7 @@ class OutboxService {
   final OutboxStore _store;
   final EnviarRequisicao? _enviar;
   final String _baseUrl;
-  final String Function()? _obterToken;
+  final String? Function()? _obterToken;
 
   /// Registra uma criação de coleta para envio futuro.
   ///

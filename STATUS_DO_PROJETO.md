@@ -57,9 +57,15 @@ Aplicação 100% conteinerizada via Docker.
 | 15 | Hardening de segurança da API: rate limiting, cabeçalhos HTTP e limites de entrada |
 | 16 | Fundação Outbox Offline no Flutter (fila persistente + retry seguro com X-Idempotency-Key) |
 | 17 | Integração do Outbox com a conferência (pneus/concluir/finalizar offline) |
+| 18 | Disparo automático da sincronização do Outbox (início/retorno do app + reconexão) |
+| 19 | Sessão e autenticação no Flutter (ServicoSessao + ArmazenamentoSeguroSessao) |
+| 20 | Auditoria de integridade e segurança (código verificado, 43/43 testes OK) |
+| 21 | Tela de login e integração da sessão (TelaLogin + 49/49 testes OK) |
+| 22 | Logout seguro e encerramento da sessão (TelaPrincipal + 54/54 testes OK) |
 
 Relatórios históricos: `Relatorio.txt`, `Relatorio_2.txt` a `Relatorio_6.txt`;
-relatórios de missão em `Relatorio_10.txt` a `Relatorio_23.txt`.
+relatórios de missão em `Relatorio_10.txt` a `Relatorio_29.txt`;
+relatório geral em `Relatorio_26.txt`.
 
 ## 5. Missão Atual
 
@@ -67,13 +73,16 @@ Nenhuma missão em execução.
 
 ## 6. Próximas Missões
 
-- Missão 18 — a ser definida (nenhuma funcionalidade iniciada)
+- Missão 23 — a ser definida (nenhuma funcionalidade iniciada)
 
 ## 6.1. Nota sobre relatórios
 
 `Relatorio_9.txt` contém as diretrizes de modo de atuação do agente
 (solicitação do usuário). Relatórios de missão seguem em
-`Relatorio_10.txt`, `Relatorio_11.txt`, etc.
+`Relatorio_10.txt`, `Relatorio_11.txt`, etc. `Relatorio_26.txt`
+contém o estado geral do projeto com todas as etapas concluídas.
+`Relatorio_27.txt` contém o resultado da auditoria de integridade
+e segurança (Missão 20).
 
 ## 7. Decisões Críticas
 
@@ -92,6 +101,7 @@ Ver `12_DECISOES_ARQUITETURAIS.md` como fonte detalhada. Resumo:
 - Hardening (Missão 15, doc 08 §4): rate limiting por IP com janela deslizante em memória em /auth/login e /auth/register, DESATIVADO por padrão (limite <= 0) e ativado por variáveis de ambiente na implantação — desenvolvimento local e suíte de testes permanecem intactos; 429 uniforme com Retry-After, tentativa bloqueada não prorroga a janela. Middleware HTTP acrescenta X-Content-Type-Options/X-Frame-Options/Referrer-Policy/Cache-Control: no-store e CSP restritiva (exceto /docs|/redoc|/openapi.json); HSTS somente com HSTS_ENABLED=true (HTTPS garantido). Corpo > 1 MiB (Content-Length) recebe 413 antes das rotas. Tetos de entrada: itens ≤ 200, pneus/lote ≤ 2000, quantidades ≤ 1.000.000, JSONs livres (endereco/fotos/veiculo) ≤ 4000 caracteres (helper exigir_json_compacto). Nenhuma dependência nova; nenhuma migration.
 - Fundação Outbox Offline no Flutter (Missão 16, docs 09 §§2-4): fila local PERSISTENTE (`shared_preferences`) em `meu_app_coleta_pneus/lib/core/outbox/` — operações pendentes sobrevivem ao fechamento do app. Cada operação recebe UUIDv4 próprio no agendamento e esse MESMO id é a X-Idempotency-Key reutilizada em toda tentativa (retry nunca regenera a chave nem altera o corpo). Sincronização em ordem cronológica estrita: sucesso confirmado pelo backend (200/201) marca SINCRONIZADA e descarta o item; falha de rede ou HTTP mantém a operação PENDENTE e interrompe o lote sem tocar nos seguintes. Transporte HTTP injetável (testes sem servidor). Dependências adicionadas ao Flutter: `http` e `shared_preferences` (pacotes oficiais, necessários para REST e persistência multiplataforma — o SDK puro não oferece persistência sem dart:io, que quebraria o alvo Web). Backend intocado.
 - Integração Outbox × conferência (Missão 17): as quatro operações offline do doc 09 §2 usam o MESMO OutboxService/OutboxStore/OperacaoPendente, cada uma com UUIDv4 próprio usado como X-Idempotency-Key (backend já deduplica via Missões 12/13). Payloads espelham os contratos Pydantic reais (extra=forbid): pneus = {"pneus":[...]}, conclusão = {"quantidade_conferida","quantidade_coletada"}, finalização = corpo vazio estrito {}. Correção incluída: helper da criação de coleta da Missão 16 produzia payload inventado (itens com categoria/descricao_item_json e data sem fuso) que receberia 422 — alinhado ao ColetaCreateRequest real ({marca,dimensao,quantidade_declarada} e ISO 8601 com offset). Nenhuma dependência nova; nenhum mecanismo de idempotência/retry/fila recriado.
+- Disparo automático da sincronização (Missão 18, doc 09 §3): `SincronizacaoAutomaticaOutbox` (WidgetsBindingObserver) executa exclusivamente `OutboxService.sincronizarPendentes()` em três eventos pontuais — início do app, retorno ao primeiro plano (`resumed`) e restabelecimento de conexão. Reconexão via `connectivity_plus` ^7 (única dependência nova, indispensável para listener de conectividade nos alvos Android/iOS/Web; stream injetável para testes). Evento `[none]` não dispara tentativa. Guarda anti-concorrência: disparo durante passagem em curso é ignorado (uma passagem por vez; próximo evento dispara nova). Nenhum timer/retry interno — falha só é retomada por evento externo novo (sem loop); fila vazia não gera requisição; ordem/chave/payload permanecem garantidos pelo serviço existente. `main.dart` instancia OutboxService com base URL de build (`--dart-define=API_BASE_URL`, padrão `http://localhost:8000`) e inicia o disparo automático. Backend intocado.
 
 ## 8. Decisões Pendentes
 
@@ -116,7 +126,7 @@ Ver `12_DECISOES_ARQUITETURAIS.md` como fonte detalhada. Resumo:
 - Política de mascaramento de dados sensíveis do perfil (CPF/CNPJ e chave Pix) quando exibidos a terceiros; hoje o dono vê os próprios dados completos.
 - Formato/política de validação de telefone (hoje: 8–20 caracteres, sem máscara obrigatória).
 - Hardening (Missão 15): rate limiting é por processo (memória); store compartilhado (ex.: Redis) só se a API escalar para múltiplas instâncias/workers — hoje proibido por não haver necessidade explícita. Rate limiting por usuário autenticado (100 req/min por token, doc 08 §4.4) não implementado. IP real atrás de proxy (Render) depende de --proxy-headers/TrustedHost na implantação. Corpos sem Content-Length (chunked) escapam do limite de 1 MiB. CORS restrito (doc 08 §4.5) aguarda origens oficiais do Flutter Web.
-- Outbox Flutter (Missões 16/17): disparo automático da sincronização ao restabelecer conexão e em eventos de ciclo de vida do app não implementado — hoje `sincronizarPendentes()` é invocado pelo chamador (listener de conectividade exigiria nova dependência). Política para erros HTTP definitivos (4xx) na fila ainda não definida: hoje permanecem PENDENTES e interrompem o lote, preservando a ordem. UI de acompanhamento da fila não existe (fora do escopo). As 4 operações offline já usam a fundação; fotos/divergências e upload de imagens seguem missões futuras.
+- Outbox Flutter (Missões 16/17/18): disparo automático implementado (início do app, retorno ao primeiro plano e reconexão via connectivity_plus). Falta credencial de sessão: o OutboxService instanciado no `main.dart` ainda não recebe token (não existe serviço de sessão integrado) — as requisições automáticas saem sem Authorization, o backend responde 401 e a operação permanece PENDENTE com a mesma chave (seguro, porém inócuo até a integração do login). Base URL real definida em tempo de build (`--dart-define=API_BASE_URL`). Política para erros HTTP definitivos (4xx) na fila ainda não definida: hoje permanecem PENDENTES e interrompem o lote, preservando a ordem. UI de acompanhamento da fila não existe (fora do escopo). As 4 operações offline já usam a fundação; fotos/divergências e upload de imagens seguem missões futuras.
 
 ## 9. Regras que NÃO Podem Ser Quebradas
 
