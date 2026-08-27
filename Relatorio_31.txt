@@ -1,0 +1,161 @@
+RELATORIO DA MISSAO 23 — FASE 1: ANALISE DA POLITICA DE ERROS HTTP NO OUTBOX
+(Relatorio_31.txt)
+
+1. ESTADO ATUAL
+
+- Ultima missao concluida: Missao 22 — Logout Seguro e Encerramento da Sessao
+- Flutter: 54/54 testes passando
+- flutter analyze: sem problemas
+- Backend FastAPI/PostgreSQL: intacto
+- Missao 23 em andamento: FASE 1 (somente analise) concluida
+
+2. COMPORTAMENTO ATUAL DO OUTBOX
+
+2.1. OutboxService (sincronizarPendentes):
+- Sucesso (200/201): marca SINCRONIZADA, remove da fila
+- Qualquer HTTP diferente de 200/201: registrarFalha('HTTP $codigo') + break
+- Excecao de rede: registrarFalha(erro) + break
+- StatusOperacaoOutbox: apenas pendente e sincronizada
+- NAO existe estado de falha
+
+2.2. registrarFalha:
+- Incrementa tentativas
+- Grava ultimoErro
+- Seta status = pendente (sempre)
+- Nao distingue erro transitorio de definitivo
+
+2.3. Problema central:
+Todo HTTP nao-200/201 e tratado da mesma forma — quebra a fila e preserva
+para retry. Nao ha distincao entre erro transitorio (rede, 500) e erro
+definitivo (403, 422).
+
+3. CONTRATOS HTTP DO BACKEND (4 endpoints do Outbox)
+
+3.1. Codigo de Sucesso:
+- 200: replay idempotente (todos os 4 endpoints)
+- 201: criacao com sucesso (criacao de coleta, registro de pneus)
+
+3.2. Codigo de Autenticacao:
+- 401: token ausente, invalido, expirado ou usuario inativo
+  * Presente em todos os 4 endpoints
+  * Retornado por auth.py (get_current_user)
+
+3.3. Codigo de Autorizacao:
+- 403: role nao autorizada para o endpoint
+  * Criacao: exige CLIENTE
+  * Pneus/Concluir/Finalizar: exige PRESTADOR
+  * Retornado por rbac.py (require_roles)
+
+3.4. Codigo de Nao Encontrado:
+- 404: perfil ausente, coleta inexistente, anti-enumeration
+  * Criacao: perfil CLIENTE nao encontrado, ou chave reutilizada por outro usuario
+  * Pneus/Concluir/Finalizar: perfil PRESTADOR nao encontrado, coleta nao
+    encontrada ou pertence a outro prestador, ou chave reutilizada por outro usuario
+  * Anti-enumeration: mesma X-Idempotency-Key com usuario diferente => 404
+
+3.5. Codigo de Conflito:
+- 409: conflito de estado, idempotencia diferente, duplicata
+  * Criacao: chave reutilizada com corpo/hash diferente
+  * Pneus: status != EM_CONFERENCIA, numero_fogo duplicado na mesma coleta,
+    chave reutilizada com operacao diferente
+  * Concluir: status != EM_CONFERENCIA, conferencia ja concluida,
+    quantidade_coletada nao bate com pneus registrados, transicao invalida,
+    chave reutilizada com operacao diferente
+  * Finalizar: status != CARREGADA, regra de preco nao encontrada,
+    chave reutilizada com operacao diferente
+
+3.6. Codigo de Limite:
+- 413: corpo > 1 MiB (middleware hardening_http)
+
+3.7. Codigo de Validacao:
+- 422: falha de validacao Pydantic (campos obrigatorios, tipos, extra=forbid)
+  * Chave de idempotencia nao e UUID ou nao e UUIDv4
+  * Formato DOT invalido, DOT futuro, ilegivel sem foto
+  * endereco_origem_json > 4000 chars, data_agendada sem fuso
+  * fotos_divergencia_json > 4000 chars, divergencia sem justificativa
+  * FinalizacaoRequest com corpo nao vazio
+
+3.8. Codigo de Rate Limit:
+- 429: NAO retornado por nenhum dos 4 endpoints do Outbox
+  * Rate limiting so existe em /auth/login e /auth/register
+
+3.9. Codigo de Servidor:
+- 500: IntegrityError nao tratado (raro, concurrency)
+
+4. POLITICA HTTP RECOMENDADA
+
+4.1. Classificacao por Codigo:
+
+| Codigo   | Classificacao | Acao                  | Justificativa                                          |
+|----------|---------------|-----------------------|--------------------------------------------------------|
+| 200/201  | Sucesso       | Remover               | Confirmado pelo backend                                |
+| 401      | Transitorio   | Manter PENDENTE       | Token pode expirar; proximo login resolve               |
+| 403      | Definitivo    | Marcar FALHA_DEFINITIVA | Role errada nao se resolve com retry                   |
+| 404      | Definitivo    | Marcar FALHA_DEFINITIVA | Perfil/colecao inexistente; anti-enumeration            |
+| 409      | Definitivo    | Marcar FALHA_DEFINITIVA | Conflito de estado ou duplicata; retry nao resolve      |
+| 413      | Definitivo    | Marcar FALHA_DEFINITIVA | Corpo excede limite; retry nao reduz tamanho            |
+| 422      | Definitivo    | Marcar FALHA_DEFINITIVA | Payload invalido; retry com mesmo payload retorna 422   |
+| 429      | Transitorio   | Manter PENDENTE       | Rate limit; aguardar janela (defensivo, nao retornado)  |
+| 5xx      | Transitorio   | Manter PENDENTE       | Erro de servidor; pode resolver com retry               |
+| Rede     | Transitorio   | Manter PENDENTE       | Sem conexao; retry na proxima sincronizacao             |
+
+4.2. Nota sobre 401:
+Nao removemos porque a mesma operacao offline pode ser reenviada apos novo
+login. O backend aceita replay com a mesma X-Idempotency-Key quando o
+usuario e o mesmo (200 replay). Se o usuario mudou, o backend retorna 404
+(anti-enumeration) = ai sim e definitivo.
+
+4.3. Nota sobre 404 (anti-enumeration):
+Se a operacao foi criada offline pelo usuario A e reenviada com token do
+usuario B, o backend retorna 404. A operacao esta semanticamente incorreta
+(usuario errado) e nao pode ser corrigida por retry. Definitivo.
+
+5. MUDANCAS MINIMAS NECESSARIAS
+
+5.1. operacao_pendente.dart:
+- Adicionar StatusOperacaoOutbox.falhaDefinitiva ao enum
+- Atualizar toMap() e fromMap() para serializar o novo status
+- Alterar registrarFalha para aceitar flag definitivo e setar status conforme
+
+5.2. outbox_service.dart:
+- Em sincronizarPendentes(), classificar o codigo HTTP:
+  * 401, 429, 5xx: registrarFalha definitivo: false + break
+  * 403, 404, 409, 413, 422: registrarFalha definitivo: true + break
+  * Qualquer outro codigo inesperado: transititorio (defensivo)
+- Na iteracao: se operacao.status == falhaDefinitiva, continue (pula sem break)
+
+5.3. outbox_store.dart:
+- Sem alteracoes necessarias (ja serializa status.name)
+
+5.4. Testes necessarios:
+- Erro 403 marca falhaDefinitiva e nao remove da fila
+- Erro 422 marca falhaDefinitiva
+- Erro 401 permanece pendente
+- Operacao com falhaDefinitiva e pulada na sincronizacao
+- Operacao seguinte a definitiva e processada (fila nao bloqueia)
+- Erro de rede permanece pendente
+- Serializacao/desserializacao do novo status
+- Testes existentes continuam passando (regressao)
+
+6. IMPACTO NA ORDEM DA FILA
+
+6.1. Regra atual (doc 09 3.1.4):
+Falha interrompe lote; itens seguintes ficam intactos.
+
+6.2. Com a politica:
+Falha definitiva marca e interrompe lote (mesma Semana 22 — operacao
+seguinte e processada na proxima passagem). Isso preserva a garantia de
+ordenacao sem criar dependencias entre operacoes.
+
+6.3. Excecao aceitavel:
+Se A (criacao) falha definitivamente, B (pneus de A) tambem falhara
+(404 — colecao nao existe). Isso e correto: a operacao B esta
+semanticamente vinculada a A; sem A, B nao tem alvo.
+
+7. CONFIRMACAO
+
+- Fase 1 (analise) concluida
+- Nenhuma implementacao realizada (conforme ordem: INSPECIONAR -> ANALISAR -> PROPOR -> PARAR)
+- Backend intacto (nenhuma alteracao necessaria)
+- Nenhuma dependencia nova necessaria
+- Proximo passo: aguardar autorizacao para implementar (Fase 2)

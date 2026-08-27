@@ -1,0 +1,92 @@
+RELATORIO DA MISSAO 23 — POLITICA SEGURA DE ERROS HTTP NO OUTBOX
+(Relatorio_32.txt)
+
+1. ARQUIVOS CRIADOS:
+- meu_app_coleta_pneus/test/outbox_politica_erros_test.dart: 17 testes
+  da Missao 23 (classificacao de erros HTTP).
+- Relatorio_32.txt (este relatorio).
+
+2. ARQUIVOS ALTERADOS:
+- meu_app_coleta_pneus/lib/core/outbox/operacao_pendente.dart:
+  * Enum StatusOperacaoOutbox: adicionado falhaDefinitiva.
+  * registrarFalha(): aceita parametro nomeado definitivo (default false).
+  * toMap/fromMap: serializacao funciona automaticamente via status.name.
+- meu_app_coleta_pneus/lib/core/outbox/outbox_service.dart:
+  * sincronizarPendentes(): pula operacoes com falhaDefinitiva (continue);
+    classifica erros HTTP via _ehErroDefinitivo(); passa flag definitivo
+    para registrarFalha.
+  * _ehErroDefinitivo(): metodo privado que retorna true para 403, 404,
+    409, 413, 422; false para todo o resto (401, 429, 5xx, desconhecido).
+  * Documentacao da classe atualizada.
+
+3. POLITICA IMPLEMENTADA:
+
+| Codigo   | Classificacao | Acao                      |
+|----------|---------------|---------------------------|
+| 200/201  | Sucesso       | Remover da fila           |
+| 401      | Transitorio   | Manter PENDENTE           |
+| 403      | Definitivo    | Marcar FALHA_DEFINITIVA   |
+| 404      | Definitivo    | Marcar FALHA_DEFINITIVA   |
+| 409      | Definitivo    | Marcar FALHA_DEFINITIVA   |
+| 413      | Definitivo    | Marcar FALHA_DEFINITIVA   |
+| 422      | Definitivo    | Marcar FALHA_DEFINITIVA   |
+| 429      | Transitorio   | Manter PENDENTE           |
+| 5xx      | Transitorio   | Manter PENDENTE           |
+| Rede     | Transitorio   | Manter PENDENTE           |
+| Desconh. | Transitorio   | Manter PENDENTE (defensivo)|
+
+4. COMPORTAMENTO IMPLEMENTADO:
+- Operacao com falha definitiva e marcada FALHA_DEFINITIVA e mantida na
+  fila para futura visualizacao/acao manual.
+- Operacao com falha definitiva NAO e reenviada automaticamente (skip
+  no inicio da iteracao).
+- Operacao com falha definitiva NAO bloqueia operacoes posteriores
+  (continue, proxima operacao e processada na proxima passagem).
+- Operacao com falha transitiva permanece PENDENTE para retry.
+- Codigo HTTP desconhecido e tratado como transitivo (defensivo).
+- ID, payload, chave de idempotencia e.camintos sao preservados apos
+  falha definitiva.
+- Operacoes existentes (sucesso, retry, fila) continuam funcionando
+  normalmente.
+
+5. TESTES:
+- 17 novos testes em test/outbox_politica_erros_test.dart:
+  1) 403 → FALHA_DEFINITIVA
+  2) 404 → FALHA_DEFINITIVA
+  3) 409 → FALHA_DEFINITIVA
+  4) 413 → FALHA_DEFINITIVA
+  5) 422 → FALHA_DEFINITIVA
+  6) 401 → PENDENTE (transitorio)
+  7) 429 → PENDENTE (transitorio)
+  8) 500 → PENDENTE (transitorio)
+  9) 503 → PENDENTE (transitorio)
+  10) falha de rede → PENDENTE (transitorio)
+  11) codigo HTTP desconhecido (418) → PENDENTE (defensivo)
+  12) operacao FALHA_DEFINITIVA nao e reenviada automaticamente
+  13) FALHA_DEFINITIVA nao bloqueia operacoes posteriores
+  14) status FALHA_DEFINITIVA sobrevive a persistencia/reabertura
+  15) operacoes existentes continuam funcionando (regressao)
+  16) ID e payload preservados apos FALHA_DEFINITIVA
+  17) sucesso (200/201) continua removendo operacao normalmente
+
+6. RESULTADO:
+- flutter analyze: No issues found!
+- flutter test: 71/71 OK (54 anteriores + 17 novas)
+
+7. PROBLEMAS ENCONTRADOS:
+- NENHUM.
+
+8. PENDENCIAS:
+- NENHUMA nova. As pendencias existentes (STATUS_DO_PROJETO.md secao 8)
+  permanecem inalteradas.
+
+9. CONFIRMACAO:
+- Backend FastAPI/PostgreSQL INTACTO (nenhuma alteracao).
+- Nenhuma dependencia nova adicionada.
+- Nenhuma regra de negocio alterada.
+- Nenhuma UI criada nesta missao.
+- Codigo existente (OutboxService, OutboxStore, OperacaoPendente,
+  Sessao, SincronizacaoAutomatica) permaneceu 100% funcional.
+- Todas as 71 testes passando.
+
+TOTAL DE TESTES: 71 (54 pre-existentes + 17 novas) — TODAS PASSANDO.

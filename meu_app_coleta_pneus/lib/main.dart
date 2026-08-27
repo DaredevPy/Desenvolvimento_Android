@@ -1,11 +1,12 @@
 import 'package:flutter/material.dart';
 
+import 'core/api/api_service.dart';
 import 'core/outbox/outbox_service.dart';
 import 'core/outbox/sincronizacao_automatica_outbox.dart';
 import 'core/sessao/armazenamento_seguro_sessao.dart';
 import 'core/sessao/servico_sessao.dart';
 import 'core/sessao/tela_login.dart';
-import 'cliente/tela_cliente_adicionar_pneu.dart';
+import 'cliente/screens/tela_cliente_minhas_coletas.dart';
 import 'prestador/tela_prestador_listar_pendentes.dart';
 
 void main() async {
@@ -28,13 +29,25 @@ void main() async {
   );
   SincronizacaoAutomaticaOutbox(outbox: outbox).iniciar();
 
-  runApp(MyApp(sessao: sessao));
+  final api = ApiService(
+    baseUrl: baseUrlApi,
+    obterToken: () => sessao.tokenAtual,
+  );
+
+  runApp(MyApp(sessao: sessao, outbox: outbox, api: api));
 }
 
 class MyApp extends StatelessWidget {
-  const MyApp({super.key, required this.sessao});
+  const MyApp({
+    super.key,
+    required this.sessao,
+    required this.outbox,
+    required this.api,
+  });
 
   final ServicoSessao sessao;
+  final OutboxService outbox;
+  final ApiService api;
 
   @override
   Widget build(BuildContext context) {
@@ -44,16 +57,27 @@ class MyApp extends StatelessWidget {
       initialRoute: sessao.tokenAtual != null ? '/principal' : '/login',
       routes: {
         '/login': (_) => TelaLogin(servicoSessao: sessao),
-        '/principal': (_) => TelaPrincipal(sessao: sessao),
+        '/principal': (_) => TelaPrincipal(
+              sessao: sessao,
+              outbox: outbox,
+              api: api,
+            ),
       },
     );
   }
 }
 
 class TelaPrincipal extends StatelessWidget {
-  const TelaPrincipal({super.key, required this.sessao});
+  const TelaPrincipal({
+    super.key,
+    required this.sessao,
+    required this.outbox,
+    required this.api,
+  });
 
   final ServicoSessao sessao;
+  final OutboxService outbox;
+  final ApiService api;
 
   Future<void> _sair(BuildContext context) async {
     await sessao.sair();
@@ -84,8 +108,9 @@ class TelaPrincipal extends StatelessWidget {
                 Navigator.push(
                   context,
                   MaterialPageRoute(
-                    builder: (_) => const TelaClienteAdicionarPneu(
-                      clienteId: 'cliente123',
+                    builder: (_) => TelaClienteMinhasColetas(
+                      api: api,
+                      outbox: outbox,
                     ),
                   ),
                 );

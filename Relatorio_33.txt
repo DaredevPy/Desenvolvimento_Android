@@ -1,0 +1,103 @@
+RELATORIO DE CONTINUIDADE — ANALISE PARA MISSAO 24
+(Relatorio_33.txt)
+
+1. ESTADO ATUAL
+
+- Ultima missao concluida: Missao 23 — Politica de Erros HTTP do Outbox
+- Flutter: 71/71 testes passando
+- flutter analyze: sem issues
+- Backend FastAPI/PostgreSQL: intacto, 35 endpoints funcionais
+- Nenhuma dependencia nova na Missao 23
+
+2. ESTADO REAL DO PRODUTO
+
+2.1. Backend (FastAPI + PostgreSQL):
+- Completo e funcional
+- 35 endpoints: auth (3), profiles (6), collections (12), pricing (3), admin (4), rbac (3), ownership (2), health (2)
+- Autenticacao JWT, RBAC (CLIENTE/PRESTADOR/ADMINISTRADOR), ownership
+- Dominio de coletas completo: maquina de estados, conferencia individual
+  de pneus, DOT, financeiro com snapshots, idempotencia, contestacao,
+  hardening de seguranca
+- Testes backend passando, sem alteracoes pendentes
+
+2.2. Flutter — 4 telas (estagio prototipo):
+- TelaLogin: conecta ao backend real (POST /auth/login) ✓
+- TelaPrincipal: hub com botoes "Sou Cliente" / "Sou Prestador" + logout
+- TelaClienteAdicionarPneu: formulario basico (tipo, quantidade, endereco)
+  salva no Firestore (NAO no backend)
+- TelaPrestadorListarPendentes: lista pneus pendentes do Firestore com
+  botao "Iniciar Coleta" → muda status no Firestore
+
+2.3. Dualidade de dados (problema central):
+- Telas antigas (Cliente/Prestador) usam FIRESTORE DIRETO
+- Session/Outbox usam FASTAPI BACKEND
+- Dois caminhos de dados completamente independentes
+- Nao ha integracao entre telas de negocio e API REST
+
+2.4. Infraestrutura existente (não conectada à UI):
+- OutboxService: 4 operacoes definidas (criar coleta, registrar pneus,
+  concluir, finalizar) mas NENHUMA conectada a UI
+- SincronizacaoAutomatica: funciona, mas sem dados reais
+- ServicoSessao: integrada ao Outbox, token em tempo real
+- Politica de erros HTTP: implementada e testada
+
+3. PRINCIPAIS LACUNAS PARA MVP
+
+| # | Lacuna                                        | Impacto                                    |
+|---|-----------------------------------------------|--------------------------------------------|
+| 1 | Sem cliente HTTP para chamadas GET ao backend | Impossivel listar coletas, obter detalhes  |
+| 2 | Tela do Cliente nao cria coletas no backend    | Formulario salva no Firestore; Outbox      |
+|   |                                               | nao e acionado                             |
+| 3 | Tela do Prestador nao lista coletas do backend | Lista vem do Firestore, nao da API         |
+| 4 | Sem tela de conferencia (prestador)            | Nao existe UI para registrar pneus         |
+|   |                                               | individuais, DOT, conferencia              |
+| 5 | Sem tela de finalizacao                        | Nao existe UI para finalizar coleta com    |
+|   |                                               | snapshots financeiros                      |
+| 6 | Fluxo do cliente incompleto                    | Cliente nao ve suas coletas, nao pode      |
+|   |                                               | cancelar, nao pode contestar               |
+| 7 | Papel do usuario nao e consultado              | TelaPrincipal nao distingue                |
+|   |                                               | CLIENTE/PRESTADOR/ADMIN pelo token         |
+
+4. RANKING DAS PROXIMAS 5 MISSOES
+
+| # | Missao | Escopo | Justificativa |
+|---|--------|--------|---------------|
+| 24 | Camada de cliente HTTP para o backend (ler) | Criar ApiService com metodos GET para listar coletas, obter coleta, listar disponiveis. Usar ServicoSessao.tokenAtual para autenticacao. Transporte injetavel para testes. | Pre-requisito de tudo. Sem isto, nenhuma tela pode mostrar dados do backend. E a ponte entre UI e API. |
+| 25 | Tela do Cliente: criar coleta via Outbox + listar | Conectar formulario existente ao OutboxService.agendarCriacaoDeColeta(). Criar tela de listagem usando ApiService.listarMinhasColetas(). Remover dependencia do Firestore neste fluxo. | Fluxo essencial do Cliente. O cliente precisa criar coletas e ve-las. Usa mecanismos ja implementados. |
+| 26 | Tela do Prestador: listar disponiveis + aceitar | Criar tela de listagem de coletas disponiveis (GET /collections/disponiveis). Botao de aceitar coleta (POST /aceitar). Conectar ao backend via ApiService. | Fluxo essencial do Prestador. Sem isto, o prestador nao tem coletas para trabalhar. |
+| 27 | Tela do Prestador: conferencia de pneus | Tela para registrar pneus individuais (DOT, marca, medida, numero de fogo). Conectar ao OutboxService.agendarRegistroPneus(). Tela de conclusao com quantidades conferida/coletada. | Conferencia e finalizacao. Fluxo operacional central. |
+| 28 | Tela do Prestador: finalizar coleta | Tela de confirmacao de finalizacao. Conectar ao OutboxService.agendarFinalizacaoColeta(). Mostrar resultado financeiro (snapshots). | Encerramento do ciclo: criar → aceitar → conferir → finalizar. |
+
+5. RECOMENDACAO: MISSAO 24
+
+5.1. Por que esta missao primeiro:
+- E o gatilho que destrava todas as outras
+- Sem um cliente HTTP para chamadas GET, nenhuma tela pode mostrar dados reais
+- E infraestrutura pequena e isolada: um arquivo ApiService com 3-4 metodos
+- Nao altera regras de negocio, nao adiciona dependencias, nao toca no backend
+- Pode ser testada com transporte injetavel ( padrao ja estabelecido)
+- O ServicoSessao.tokenAtual ja existe e esta integrado
+
+5.2. Escopo minimo:
+- ApiService com metodos:
+  * listarMinhasColetas() → GET /api/v1/collections
+  * obterColeta(id) → GET /api/v1/collections/{id}
+  * listarDisponiveis() → GET /api/v1/collections/disponiveis
+- Cada metodo retorna o modelo JSON do backend (Map<String, dynamic>)
+- Transporte HTTP injetavel (testes sem servidor)
+- Token obtido de ServicoSessao.tokenAtual em tempo de chamada
+- Testes unitarios cobrindo: sucesso (200), 401, erro de rede
+
+5.3. Nao incluir:
+- UI (telas)
+- Escrita/criacao (isso e Missao 25)
+- Modificacoes no backend
+- Novas dependencias
+
+6. CONFIRMACAO
+
+- Backend: intacto, 35 endpoints funcionais
+- Flutter: 71/71 testes passando
+- Nenhuma dependencia nova
+- Nenhuma regra de negocio alterada
+- Proximo passo: aguardar autorizacao para implementar Missao 24

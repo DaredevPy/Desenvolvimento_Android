@@ -17,8 +17,8 @@ typedef EnviarRequisicao = Future<int> Function(
 ///
 /// Fluxo por operação: gravação local imediata -> tentativa de envio com
 /// `X-Idempotency-Key` UUIDv4 -> sucesso confirmado pelo backend descarta
-/// o item; qualquer falha mantém a operação PENDENTE com a MESMA chave
-/// para retry seguro (o backend deduplica replays).
+/// o item; falha transitória mantém PENDENTE para retry; falha definitiva
+/// marca FALHA_DEFINITIVA para ação manual (Missão 23).
 ///
 /// Operações offline suportadas (escopo doc 09 §2): criação de coleta,
 /// registro de pneus conferidos, conclusão da conferência e finalização —
@@ -111,15 +111,19 @@ class OutboxService {
   /// (doc 09 §3.1.4).
   ///
   /// - Sucesso (200/201): marca SINCRONIZADA e descarta o item.
-  /// - Falha de rede ou HTTP: registra tentativa/erro e interrompe o lote;
-  ///   os itens seguintes permanecem intactos na fila (ordem preservada).
-  /// - Registros marcados como sincronizados que sobraram de um corte entre
-  ///   marcação e descarte são removidos no início da próxima passagem.
+  /// - Falha transitória (401, 429, 5xx, rede): mantém PENDENTE e interrompe
+  ///   o lote; os itens seguintes permanecem intactos na fila.
+  /// - Falha definitiva (403, 404, 409, 413, 422): marca FALHA_DEFINITIVA,
+  ///   mantém o registro para ação manual e interrompe o lote.
+  /// - Operações com FALHA_DEFINITIVA são puladas (não reenviadas).
   ///
   /// Retorna a quantidade de operações confirmadas nesta passagem.
   Future<int> sincronizarPendentes() async {
     var concluidas = 0;
     for (final operacao in await _store.carregar()) {
+      if (operacao.status == StatusOperacaoOutbox.falhaDefinitiva) {
+        continue;
+      }
       if (operacao.status != StatusOperacaoOutbox.pendente) {
         await _store.remover(operacao.id);
         continue;
@@ -133,7 +137,8 @@ class OutboxService {
           concluidas += 1;
           continue;
         }
-        operacao.registrarFalha('HTTP $codigo');
+        final definitivo = _ehErroDefinitivo(codigo);
+        operacao.registrarFalha('HTTP $codigo', definitivo: definitivo);
         await _store.atualizar(operacao);
         break;
       } catch (erro) {
@@ -144,6 +149,20 @@ class OutboxService {
       }
     }
     return concluidas;
+  }
+
+  /// Classifica código HTTP como erro definitivo ou transitório.
+  ///
+  /// Definitivos: 403 (autorização), 404 (não encontrado/anti-enumeration),
+  /// 409 (conflito de estado), 413 (corpo grande), 422 (validação).
+  /// Transitórios: 401 (token), 429 (rate limit), 5xx (servidor).
+  /// Qualquer outro código é tratado como transitório defensivamente.
+  bool _ehErroDefinitivo(int codigo) {
+    return codigo == 403 ||
+        codigo == 404 ||
+        codigo == 409 ||
+        codigo == 413 ||
+        codigo == 422;
   }
 
   Future<int> _despachar(OperacaoPendente operacao) {

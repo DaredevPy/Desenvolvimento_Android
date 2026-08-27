@@ -1,0 +1,73 @@
+RELATORIO DA MISSAO 24 — CLIENTE HTTP DE LEITURA
+(Relatorio_34.txt)
+
+1. ARQUIVOS CRIADOS:
+- meu_app_coleta_pneus/lib/core/api/api_service.dart: cliente HTTP de
+  leitura com 3 metodos GET.
+- meu_app_coleta_pneus/test/api_service_test.dart: 11 testes unitarios.
+- Relatorio_34.txt (este relatorio).
+
+2. ARQUIVOS ALTERADOS:
+- NENHUM. Apenas arquivos novos foram criados.
+
+3. IMPLEMENTACAO:
+
+3.1. api_service.dart:
+- Typedef EnviarLeitura: Future<RespostaHttp> Function(caminho, cabecalhos)
+  (reutiliza RespostaHttp do servico_sessao.dart).
+- ApiService com construtor injetavel (enviar, baseUrl, obterToken).
+- listarMinhasColetas() → GET /api/v1/collections → List<Map<String, dynamic>>
+  * CLIENTE: retorna proprias coletas; PRESTADOR: retorna atribuidas.
+- obterColeta(id) → GET /api/v1/collections/{id} → Map<String, dynamic>
+  * Somente CLIENTE; 404 uniforme (anti-enumeration).
+- listarDisponiveis() → GET /api/v1/collections/disponiveis → List<Map<String, dynamic>>
+  * Somente PRESTADOR; coletas SOLICITADA sem provider.
+- _get(): metodo privado que monta cabecalhos, envia Authorization Bearer
+  quando token disponivel, trata HTTP != 200 como Exception.
+- _getViaHttp(): fallback HTTP real via package:http (http.get).
+- Transporte HTTP injetavel para testes sem servidor.
+
+3.2. Tratamento de erros:
+- HTTP 200: parse JSON e retorna dados.
+- Qualquer HTTP != 200: throw Exception('Erro HTTP $codigo').
+- Excecao de rede: propaga (throw).
+- Nao cria mecanismo paralelo; segue o padrao existente.
+
+4. TESTES:
+- 11 novos testes em test/api_service_test.dart:
+  1) listarMinhasColetas - sucesso (200) retorna lista de coletas
+  2) listarMinhasColetas - sucesso (200) com lista vazia
+  3) listarMinhasColetas - 401 lança exceção
+  4) listarMinhasColetas - erro de rede lança exceção
+  5) listarMinhasColetas - envia Authorization Bearer quando token disponível
+  6) listarMinhasColetas - não envia Authorization quando token é null
+  7) obterColeta - sucesso (200) retorna coleta por ID
+  8) obterColeta - 404 lança exceção
+  9) listarDisponiveis - sucesso (200) retorna coletas disponíveis
+  10) listarDisponiveis - sucesso (200) com lista vazia
+  11) listarDisponiveis - 403 lança exceção
+
+5. RESULTADO:
+- flutter analyze: No issues found!
+- flutter test: 82/82 OK (71 anteriores + 11 novas)
+
+6. PROBLEMAS ENCONTRADOS:
+- 3 testes falharam na primeira execucao: ApiService nao tratava HTTP
+  != 200 como erro (tentava parsear o body e lancava _TypeError em vez
+  de Exception). Corrigido adicionando verificacao de status code no
+  metodo _get(). Todos os 3 testes passaram apos a correcao.
+
+7. PENDENCIAS:
+- NENHUMA nova. As pendencias existentes (STATUS_DO_PROJETO.md secao 8)
+  permanecem inalteradas.
+
+8. CONFIRMACAO:
+- Backend FastAPI/PostgreSQL INTACO (nenhuma alteracao).
+- Nenhuma dependencia nova adicionada.
+- Nenhuma regra de negocio alterada.
+- Nenhuma UI criada nesta missao.
+- Codigo existente (OutboxService, ServicoSessao, SincronizacaoAutomatica)
+  permaneceu 100% funcional.
+- Todas as 82 testes passando.
+
+TOTAL DE TESTES: 82 (71 pre-existentes + 11 novas) — TODAS PASSANDO.

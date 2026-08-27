@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:meu_app_coleta_pneus/core/api/api_service.dart';
 import 'package:meu_app_coleta_pneus/core/outbox/outbox_service.dart';
 import 'package:meu_app_coleta_pneus/core/sessao/servico_sessao.dart';
 import 'package:meu_app_coleta_pneus/main.dart';
@@ -25,6 +26,11 @@ void main() {
     SharedPreferences.setMockInitialValues({});
   });
 
+  OutboxService _outboxDummy(ServicoSessao sessao) =>
+      OutboxService(obterToken: () => sessao.tokenAtual);
+
+  ApiService _apiDummy() => ApiService();
+
   group('Logout', () {
     testWidgets('botão de logout existe na AppBar', (tester) async {
       final armazem = _ArmazenamentoMemoria();
@@ -39,7 +45,11 @@ void main() {
       await sessao.entrar(email: 'a@b.com', senha: 's');
 
       await tester.pumpWidget(MaterialApp(
-        home: TelaPrincipal(sessao: sessao),
+        home: TelaPrincipal(
+          sessao: sessao,
+          outbox: _outboxDummy(sessao),
+          api: _apiDummy(),
+        ),
       ));
 
       expect(find.byIcon(Icons.logout), findsOneWidget);
@@ -58,12 +68,19 @@ void main() {
       await sessao.entrar(email: 'a@b.com', senha: 's');
       expect(sessao.tokenAtual, isNotNull);
 
+      final outbox = _outboxDummy(sessao);
+      final api = _apiDummy();
+
       await tester.pumpWidget(MaterialApp(
         routes: {
           '/login': (_) => const Scaffold(body: Text('LOGIN')),
-          '/principal': (_) => TelaPrincipal(sessao: sessao),
+          '/principal': (_) => TelaPrincipal(
+                sessao: sessao,
+                outbox: outbox,
+                api: api,
+              ),
         },
-        home: TelaPrincipal(sessao: sessao),
+        home: TelaPrincipal(sessao: sessao, outbox: outbox, api: api),
       ));
 
       await tester.tap(find.byIcon(Icons.logout));
@@ -85,12 +102,19 @@ void main() {
       );
       await sessao.entrar(email: 'a@b.com', senha: 's');
 
+      final outbox = _outboxDummy(sessao);
+      final api = _apiDummy();
+
       await tester.pumpWidget(MaterialApp(
         routes: {
           '/login': (_) => const Scaffold(body: Text('LOGIN')),
-          '/principal': (_) => TelaPrincipal(sessao: sessao),
+          '/principal': (_) => TelaPrincipal(
+                sessao: sessao,
+                outbox: outbox,
+                api: api,
+              ),
         },
-        home: TelaPrincipal(sessao: sessao),
+        home: TelaPrincipal(sessao: sessao, outbox: outbox, api: api),
       ));
 
       await tester.tap(find.byIcon(Icons.logout));
@@ -125,12 +149,18 @@ void main() {
       final pendentes = await outbox.pendentes();
       expect(pendentes, hasLength(1));
 
+      final api = _apiDummy();
+
       await tester.pumpWidget(MaterialApp(
         routes: {
           '/login': (_) => const Scaffold(body: Text('LOGIN')),
-          '/principal': (_) => TelaPrincipal(sessao: sessao),
+          '/principal': (_) => TelaPrincipal(
+                sessao: sessao,
+                outbox: outbox,
+                api: api,
+              ),
         },
-        home: TelaPrincipal(sessao: sessao),
+        home: TelaPrincipal(sessao: sessao, outbox: outbox, api: api),
       ));
 
       await tester.tap(find.byIcon(Icons.logout));
@@ -153,12 +183,19 @@ void main() {
       await sessao.entrar(email: 'a@b.com', senha: 's');
       final tokenAntigo = sessao.tokenAtual;
 
+      final outbox = _outboxDummy(sessao);
+      final api = _apiDummy();
+
       await tester.pumpWidget(MaterialApp(
         routes: {
           '/login': (_) => const Scaffold(body: Text('LOGIN')),
-          '/principal': (_) => TelaPrincipal(sessao: sessao),
+          '/principal': (_) => TelaPrincipal(
+                sessao: sessao,
+                outbox: outbox,
+                api: api,
+              ),
         },
-        home: TelaPrincipal(sessao: sessao),
+        home: TelaPrincipal(sessao: sessao, outbox: outbox, api: api),
       ));
 
       await tester.tap(find.byIcon(Icons.logout));

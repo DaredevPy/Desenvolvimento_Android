@@ -1,0 +1,80 @@
+RELATORIO DE CONTINUIDADE — ESTADO DO PROJETO APOS MISSAO 22
+(Relatorio_30.txt)
+
+1. ESTADO ATUAL
+
+- Ultima missao concluida: Missao 22 — Logout Seguro e Encerramento da Sessao
+- Flutter: 54/54 testes passando
+- flutter analyze: sem problemas
+- Backend FastAPI/PostgreSQL: intacto (nenhuma alteracao desde Missao 22)
+- Nenhuma dependencia nova adicionada
+- Nenhuma regra de negocio alterada
+- Nenhuma regressao identificada
+
+2. CORRECAO DE INTERPRETACAO
+
+O Relatorio_30 identificou incorretamente a integracao Sessao x Outbox como
+pendencia. A investigacao do codigo real confirmou que a integracao esta
+COMPLETA e VALIDADA desde as Missoes 19/20:
+
+- OutboxService recebe obterToken: () => sessao.tokenAtual (outbox_service.dart:31)
+- Header Authorization: Bearer adicionado em cada envio (outbox_service.dart:155-158)
+- ServicoSessao expoe tokenAtual como getter síncrono (servico_sessao.dart:67)
+- main.dart vincula os servicos via closure (main.dart:27)
+- Sessao carregada antes da criacao do Outbox (main.dart:23)
+- 3 testes de integracao dedicados existem (sessao_test.dart:149-277)
+
+Portanto, "token de sessao nao integrado ao Outbox" NAO e pendencia.
+
+3. PENDENCIAS REAIS IDENTIFICADAS
+
+3.1. Backend:
+- Formula DOT -> idade decimal (provisoria em anos completos)
+- Limite de idade configuravel pelo Administrador (hardcoded 7.0)
+- Rate limiting por usuario autenticado (100 req/min, doc 08 4.4)
+- CORS restrito (aguarda origens oficiais do Flutter Web)
+- Revogacao/refresh de tokens JWT
+
+3.2. Flutter:
+- UI de acompanhamento da fila Outbox
+- Politica para erros HTTP 4xx no Outbox (hoje: permanecem PENDENTES e interrompem lote)
+
+3.3. Negocio:
+- Cancelamento ACEITA -> CANCELADA (doc 05)
+- Reputacao automatica (DIVERGENCIA_INJUSTIFICADA)
+- Payload formal de contestacao
+- Upload de evidencias fotograficas
+- Politica de senha, provisionamento de ADMIN, etc.
+
+4. PROPOSTA PARA MISSAO 23
+
+Missao 23 — Politica de Erros HTTP 4xx no Outbox
+
+Escopo minimo:
+- Quando o backend retornar 400, 401, 403 ou 422, marcar a operacao como
+  FALHA_DEFINITIVA (nao mais PENDENTE)
+- Operacao com falha definitiva e removida da fila e registrada para auditoria visual
+- Erros 429 (rate limit), 500, 502, 503 continuam como PENDENTE (retry)
+- UI minima: indicador visual na TelaPrincipal mostrando quantidade de
+  operacoes com falha
+
+Justificativa:
+- Seguranca + Integridade. Operacoes recusadas definitivamente pelo backend
+  (403 token expirado, 422 payload invalido) ficam pendentes para sempre e
+  bloqueiam operacoes seguintes na fila. O usuario sincroniza indefinidamente
+  sem saber que suas operacoes estao permanentemente recusadas.
+
+5. CONFIRMACAO DE INTEGRIDADE
+
+- Todos os mecanismos existentes permanecem funcionais:
+  * Sessao JWT (ServicoSessao + ArmazenamentoSeguroSessao)
+  * Outbox offline (fila persistente + idempotencia + retry)
+  * Sincronizacao automatica (connectivity_plus)
+  * Integracao Sessao x Outbox (token em tempo real)
+  * Login/Logout (TelaLogin + TelaPrincipal)
+  * Conferencia offline (pneus/concluir/finalizar)
+  * Backend completo (auth, RBAC, ownership, coletas, financeiro, admin)
+
+6. TOTAL DE TESTES
+
+54 testes Flutter — TODAS PASSANDO.

@@ -1,7 +1,7 @@
 import 'package:uuid/uuid.dart';
 
 /// Estado de uma operação na fila Outbox (doc 09 §3.1).
-enum StatusOperacaoOutbox { pendente, sincronizada }
+enum StatusOperacaoOutbox { pendente, sincronizada, falhaDefinitiva }
 
 /// Operação de escrita criada offline, aguardando envio ao backend.
 ///
@@ -76,10 +76,12 @@ class OperacaoPendente {
     );
   }
 
-  void registrarFalha(String erro) {
+  void registrarFalha(String erro, {bool definitivo = false}) {
     tentativas += 1;
     ultimoErro = erro;
-    status = StatusOperacaoOutbox.pendente;
+    status = definitivo
+        ? StatusOperacaoOutbox.falhaDefinitiva
+        : StatusOperacaoOutbox.pendente;
   }
 
   void marcarSincronizada() {
