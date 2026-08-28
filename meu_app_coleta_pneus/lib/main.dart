@@ -8,6 +8,7 @@ import 'core/sessao/servico_sessao.dart';
 import 'core/sessao/tela_login.dart';
 import 'cliente/screens/tela_cliente_minhas_coletas.dart';
 import 'prestador/tela_prestador_listar_pendentes.dart';
+import 'prestador/tela_prestador_minhas_coletas.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -126,14 +127,33 @@ class TelaPrincipal extends StatelessWidget {
                 Navigator.push(
                   context,
                   MaterialPageRoute(
-                    builder: (_) => TelaPrestadorListarPendentes(),
+                    builder: (_) => TelaPrestadorListarPendentes(
+                      api: api,
+                    ),
                   ),
                 );
               },
               style: ElevatedButton.styleFrom(
                 minimumSize: const Size(200, 50),
               ),
-              child: const Text('Sou Prestador'),
+              child: const Text('Coletas Disponíveis'),
+            ),
+            const SizedBox(height: 20),
+            ElevatedButton(
+              onPressed: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => TelaPrestadorMinhasColetas(
+                      api: api,
+                    ),
+                  ),
+                );
+              },
+              style: ElevatedButton.styleFrom(
+                minimumSize: const Size(200, 50),
+              ),
+              child: const Text('Minhas Coletas'),
             ),
           ],
         ),

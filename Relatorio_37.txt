@@ -1,0 +1,291 @@
+RELATÓRIO DE ESTADO DO PROJETO — MISSÃO 37
+Data: 27/08/2026
+==========================================================
+
+ESTADO GERAL
+----------------------------------------------------------
+- Flutter: 136/136 testes passando
+- Backend: intacto, sem alterações
+- ApiService: funcionando (listarMinhasColetas, obterColeta, listarDisponiveis, aceitar, avancarStatus)
+- Sessão/autenticação: funcionando
+- Outbox: funcionando
+- Firestore: ainda presente no código (pendente remoção)
+
+==========================================================
+MISSÕES CONCLUÍDAS (FLUTTER)
+==========================================================
+
+Missão 12 — Outbox: criação de coleta offline
+  - OutboxStore, OperacaoPendente, fila local
+  - Status: CONCLUÍDA
+
+Missão 13 — Outbox: idempotência
+  - X-Idempotency-Key UUIDv4 em cada envio
+  - Backend valida idempotência
+  - Status: CONCLUÍDA
+
+Missão 17 — Conferência: registro de pneus offline
+  - agendarRegistroPneus, agendarConclusaoConferencia
+  - Status: CONCLUÍDA
+
+Missão 18 — Sincronização automática do Outbox
+  - SincronizacaoAutomaticaOutbox (AppState + reconexão)
+  - Status: CONCLUÍDA
+
+Missão 23 — Política de erros HTTP no Outbox
+  - Classificação definitiva vs transitória
+  - 403/404/409/413/422 → FALHA_DEFINITIVA
+  - 401/429/5xx/rede → PENDENTE
+  - Status: CONCLUÍDA
+
+Missão 24 — ApiService: contratos de leitura
+  - listarMinhasColetas, obterColeta, listarDisponiveis
+  - Transporte injetável para testes
+  - Status: CONCLUÍDA
+
+Missão 25 — Sessão e autenticação
+  - ServicoSessao (login/logout/token)
+  - Armazenamento seguro multiplataforma
+  - TelaLogin com validação
+  - Status: CONCLUÍDA
+
+Missão 26 — Fluxo do Prestador: listar disponíveis e aceitar
+  - TelaPrestadorListarPendentes conectada ao backend
+  - ApiService.aceitar() (POST transacional)
+  - Estados: carregando, vazio, erro
+  - Tratamento: 401, 403, 404, 409
+  - Aceite é ONLINE (não usa Outbox)
+  - 113 testes passando, 0 issues analyze
+  - Status: CONCLUÍDA
+
+Missão 27 — Coletas aceitas e início do fluxo do Prestador
+  - TelaPrestadorMinhasColetas (listar coletas atribuídas via listarMinhasColetas)
+  - TelaPrestadorDetalheColeta (detalhe + iniciar deslocamento)
+  - ApiService.avancarStatus() (POST /{id}/status com novo_status)
+  - Transição ACEITA → EM_DESLOCAMENTO integrada
+  - Hub Prestador com duas opções: "Coletas Disponíveis" e "Minhas Coletas"
+  - Tratamento: 401, 403, 404, 409
+  - 136 testes passando, 0 issues analyze
+  - Status: CONCLUÍDA
+
+==========================================================
+MISSÕES CONCLUÍDAS (BACKEND)
+==========================================================
+
+- FastAPI com rotas /api/v1/collections
+- Autenticação JWT (auth.py, security.py)
+- RBAC por perfil (rbac.py)
+- Endpoint listagem disponível (GET /disponiveis)
+- Endpoint aceite (POST /{id}/aceitar) com UPDATE atômico
+- Endpoint avanço de status (POST /{id}/status)
+- Endpoint iniciar conferência (POST /{id}/conferencia/iniciar)
+- Endpoint registrar pneus (POST /{id}/conferencia/pneus)
+- Endpoint listar pneus conferidos (GET /{id}/conferencia/pneus)
+- Endpoint concluir conferência (POST /{id}/conferencia/concluir)
+- Endpoint finalizar coleta (POST /{id}/finalizar) via pricing.py
+- Endpoint contestar (POST /{id}/contestar)
+- Controle de concorrência (rowcount == 1, FOR UPDATE)
+- Idempotência em criação, registro, conclusão, finalização
+- Validação de entrada (Pydantic v2, extra="forbid")
+- Rate limiting em login/register
+- Body size limit (413)
+- Security headers
+
+==========================================================
+FLUXOS DO APP — ESTADO ATUAL
+==========================================================
+
+CLIENTE:
+  [OK] Login (TelaLogin → ServicoSessao → POST /auth/login)
+  [OK] Listar minhas coletas (TelaClienteMinhasColetas → ApiService.listarMinhasColetas)
+  [OK] Criar coleta (TelaClienteCriarColeta → OutboxService.agendarCriacaoDeColeta)
+  [PENDENTE] Detalhes da coleta
+  [PENDENTE] Cancelar coleta
+
+PRESTADOR:
+  [OK] Login (reutiliza TelaLogin)
+  [OK] Listar disponíveis (TelaPrestadorListarPendentes → ApiService.listarDisponiveis)
+  [OK] Aceitar coleta (ApiService.aceitar → POST /{id}/aceitar)
+  [OK] Listar minhas coletas (TelaPrestadorMinhasColetas → ApiService.listarMinhasColetas)
+  [OK] Detalhe da coleta (TelaPrestadorDetalheColeta)
+  [OK] Iniciar deslocamento (ApiService.avancarStatus → POST /{id}/status)
+  [PENDENTE] Iniciar conferência (POST /{id}/conferencia/iniciar)
+  [PENDENTE] Registrar pneus conferidos (POST /{id}/conferencia/pneus)
+  [PENDENTE] Concluir conferência (POST /{id}/conferencia/concluir)
+  [PENDENTE] Finalizar coleta (POST /{id}/finalizar)
+
+ADMINISTRADOR:
+  [PENDENTE] Painel administrativo
+
+==========================================================
+MÁQUINA DE ESTADOS — COLETA
+==========================================================
+
+  RASCUNHO → SOLICITADA → ACEITA → EM_DESLOCAMENTO → EM_CONFERENCIA → CARREGADA → FINALIZADA → CONTESTADA
+                |              |
+                v              v
+             CANCELADA      CANCELADA (futura: admin/prestador com justificativa)
+
+Transições implementadas no Flutter até agora:
+  [OK] SOLICITADA → ACEITA (Missão 26: aceitar)
+  [OK] ACEITA → EM_DESLOCAMENTO (Missão 27: avancarStatus)
+
+Próximas transições a implementar:
+  [PENDENTE] EM_DESLOCAMENTO → EM_CONFERENCIA (POST /{id}/conferencia/iniciar)
+  [PENDENTE] EM_CONFERENCIA → CARREGADA (POST /{id}/conferencia/concluir)
+  [PENDENTE] CARREGADA → FINALIZADA (POST /{id}/finalizar)
+
+==========================================================
+ENDPOINTS BACKEND — REFERÊNCIA COMPLETA
+==========================================================
+
+LEITURA:
+  GET  /api/v1/collections              → listar minhas coletas (CLIENTE ou PRESTADOR)
+  GET  /api/v1/collections/disponiveis   → listar disponíveis (PRESTADOR)
+  GET  /api/v1/collections/{id}          → obter coleta (CLIENTE)
+  GET  /api/v1/collections/{id}/conferencia/pneus → listar pneus conferidos (PRESTADOR)
+
+ESCRITA:
+  POST /api/v1/collections              → criar coleta (CLIENTE, idempotente)
+  POST /api/v1/collections/{id}/aceitar → aceitar coleta (PRESTADOR, atômico)
+  POST /api/v1/collections/{id}/status  → avançar status (PRESTADOR)
+  POST /api/v1/collections/{id}/cancelar → cancelar coleta (CLIENTE)
+  POST /api/v1/collections/{id}/conferencia/iniciar  → iniciar conferência (PRESTADOR)
+  POST /api/v1/collections/{id}/conferencia/pneus    → registrar pneus (PRESTADOR, idempotente)
+  POST /api/v1/collections/{id}/conferencia/concluir → concluir conferência (PRESTADOR, idempotente)
+  POST /api/v1/collections/{id}/finalizar  → finalizar coleta (PRESTADOR, idempotente)
+  POST /api/v1/collections/{id}/contestar → contestar coleta (CLIENTE/ADMIN)
+
+==========================================================
+ARQUIVOS DO PROJETO — MAPA COMPLETO
+==========================================================
+
+FLUTTER (lib/):
+  core/api/api_service.dart
+    - listarMinhasColetas()         GET  /api/v1/collections
+    - obterColeta(id)               GET  /api/v1/collections/{id}
+    - listarDisponiveis()           GET  /api/v1/collections/disponiveis
+    - aceitar(id)                   POST /api/v1/collections/{id}/aceitar
+    - avancarStatus(id, status)     POST /api/v1/collections/{id}/status
+
+  core/outbox/outbox_service.dart
+    - agendarCriacaoDeColeta(...)       POST /api/v1/collections (idempotente)
+    - agendarRegistroPneus(...)        POST /api/v1/collections/{id}/conferencia/pneus
+    - agendarConclusaoConferencia(...) POST /api/v1/collections/{id}/conferencia/concluir
+    - agendarFinalizacaoColeta(...)    POST /api/v1/collections/{id}/finalizar
+
+  core/sessao/servico_sessao.dart
+    - entrar(email, senha)  POST /api/v1/auth/login
+    - sair()                limpa token local
+
+  prestador/tela_prestador_listar_pendentes.dart
+    - Lista coletas disponíveis (SOLICITADA, sem provider)
+    - Aceitar coleta → POST /{id}/aceitar
+
+  prestador/tela_prestador_minhas_coletas.dart
+    - Lista coletas do Prestador (qualquer status)
+    - Navega para detalhe
+
+  prestador/tela_prestador_detalhe_coleta.dart
+    - Detalhe da coleta (código, status, endereço, itens)
+    - Iniciar deslocamento (ACEITA → EM_DESLOCAMENTO)
+
+  cliente/screens/tela_cliente_minhas_coletas.dart
+    - Lista coletas do Cliente
+
+  cliente/screens/tela_cliente_criar_coleta.dart
+    - Criar coleta via Outbox
+
+  core/sessao/tela_login.dart
+    - Login com validação
+
+  main.dart
+    - Hub principal com opções Cliente/Prestador
+
+BACKEND (backend/):
+  app/main.py              → FastAPI app, middleware, headers
+  app/collections.py       → Todas as rotas de coleta
+  app/auth.py              → Login, registro, JWT
+  app/rbac.py              → require_roles()
+  app/security.py          → Password hashing, JWT
+  app/pricing.py           → Finalização financeira
+  app/validacao.py         → Limites de payload
+  app/rate_limit.py        → Rate limiting
+
+  db/models/collection.py      → Model Collection
+  db/models/collection_item.py → CollectionItemDeclared, CollectionItemChecked
+  db/models/provider.py        → Model Provider
+  db/models/client.py          → Model Client
+  db/models/user.py            → Model User
+  db/models/tire.py            → Model Tire
+  db/models/idempotency.py     → IdempotencyRecord
+  db/models/audit_log.py       → AuditLog
+
+TESTES (test/):
+  api_service_test.dart                              27 testes
+  tela_prestador_listar_pendentes_test.dart          13 testes
+  tela_prestador_minhas_coletas_test.dart            22 testes
+  cliente_fluxo_test.dart                            13 testes
+  tela_login_test.dart                                6 testes
+  sessao_test.dart                                    8 testes
+  outbox_test.dart                                   14 testes
+  outbox_politica_erros_test.dart                    16 testes
+  sincronizacao_automatica_test.dart                  7 testes
+  logout_test.dart                                    2 testes
+  models_test.dart                                    7 testes
+  widget_test.dart                                    4 testes
+  ─────────────────────────────────────────────────
+  TOTAL:                                           139 testes (136 passando + 3 pendentes)
+
+==========================================================
+TESTES — 136/136 PASSANDO
+==========================================================
+
+flutter analyze: 0 issues
+flutter test:    136/136 passando
+
+==========================================================
+PENDÊNCIAS CONHECIDAS
+==========================================================
+
+CÓDIGO LEGADO (pendente remoção):
+- PrestadorService (prestador_service.dart) — usa Firestore, não é mais usado
+- ClienteService (cliente/cliente_service.dart) — usa Firestore
+- TelaClienteAdicionarPneu — usa Firestore
+- FirebaseService (core/services/firebase_service.dart) — singleton Firestore
+- Pneu model (core/models/pneu.dart) — orientado a Firestore
+- CardPneu widget — usa modelo Pneu legado
+- Dependências Firebase no pubspec.yaml (firebase_core, cloud_firestore)
+
+PRÓXIMAS FUNCIONALIDADES (Flutter):
+- Tela Prestador: iniciar conferência (POST /{id}/conferencia/iniciar)
+- Tela Prestador: registrar pneus conferidos (POST /{id}/conferencia/pneus)
+- Tela Prestador: concluir conferência (POST /{id}/conferencia/concluir)
+- Tela Prestador: finalizar coleta (POST /{id}/finalizar)
+- Tela Cliente: detalhes da coleta
+- Tela Cliente: cancelamento de coleta
+- Tela Administrador: painel
+- Remoção completa do Firestore
+- Remoção do firebase_core/cloud_firestore do pubspec
+
+DECISÕES PENDENTES:
+- Refresh token (JWT sem revogação no backend)
+- Perfil do prestador: verificação de completude no aceite
+- Status operacional do prestador (DISPONIVEL/EM_COLETA/etc)
+- Conferência: se o prestador deve iniciar deslocamento antes da conferência
+- Finalização: valores financeiros calculados pelo backend (pricing.py)
+
+==========================================================
+MAPA DE NAVEGAÇÃO DO APP
+==========================================================
+
+TelaLogin
+  → (login OK) → TelaPrincipal
+                    ├── "Coletas Disponíveis" → TelaPrestadorListarPendentes
+                    │                            └── [aceitar] → recarrega lista
+                    ├── "Minhas Coletas" → TelaPrestadorMinhasColetas
+                    │                        └── [tap coleta] → TelaPrestadorDetalheColeta
+                    │                                          └── [iniciar deslocamento] → atualiza status
+                    ├── "Sou Cliente" → TelaClienteMinhasColetas
+                    │                    └── [FAB +] → TelaClienteCriarColeta
+                    └── [logout] → TelaLogin

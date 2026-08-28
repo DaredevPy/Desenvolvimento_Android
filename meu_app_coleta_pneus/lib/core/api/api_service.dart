@@ -11,6 +11,14 @@ typedef EnviarLeitura = Future<RespostaHttp> Function(
   Map<String, String> cabecalhos,
 );
 
+/// Função de transporte para chamadas de escrita (POST). Retorna código e
+/// corpo da resposta. Injetável para testes.
+typedef EnviarEscrita = Future<RespostaHttp> Function(
+  String caminho,
+  Map<String, String> cabecalhos,
+  String corpo,
+);
+
 /// Cliente HTTP para operações de leitura no backend FastAPI.
 ///
 /// Fornece métodos para consultar coletas via GET. Cada chamada inclui
@@ -20,13 +28,16 @@ typedef EnviarLeitura = Future<RespostaHttp> Function(
 class ApiService {
   ApiService({
     EnviarLeitura? enviar,
+    EnviarEscrita? enviarEscrita,
     String baseUrl = '',
     String? Function()? obterToken,
   })  : _enviar = enviar,
+        _enviarEscrita = enviarEscrita,
         _baseUrl = baseUrl,
         _obterToken = obterToken;
 
   final EnviarLeitura? _enviar;
+  final EnviarEscrita? _enviarEscrita;
   final String _baseUrl;
   final String? Function()? _obterToken;
 
@@ -61,6 +72,41 @@ class ApiService {
         .toList();
   }
 
+  /// Aceita uma coleta disponível (somente PRESTADOR).
+  ///
+  /// Operação transacional: o backend executa um UPDATE atômico com condições
+  /// de concorrência. Retorna 409 se já foi aceita por outro prestador.
+  ///
+  /// Retorna mapa com {id, status, provider_id}.
+  Future<Map<String, dynamic>> aceitar(String coletaId) async {
+    final resposta = await _post('/api/v1/collections/$coletaId/aceitar', '');
+    return Map<String, dynamic>.from(
+      jsonDecode(resposta.corpo) as Map,
+    );
+  }
+
+  /// Avança o status de uma coleta (somente PRESTADOR).
+  ///
+  /// Transições suportadas pelo backend:
+  /// - ACEITA → EM_DESLOCAMENTO
+  /// - EM_DESLOCAMENTO → EM_CONFERENCIA
+  /// - EM_CONFERENCIA → CARREGADA
+  ///
+  /// Retorna mapa com {id, status}.
+  Future<Map<String, dynamic>> avancarStatus(
+    String coletaId,
+    String novoStatus,
+  ) async {
+    final corpo = jsonEncode({'novo_status': novoStatus});
+    final resposta = await _postComBody(
+      '/api/v1/collections/$coletaId/status',
+      corpo,
+    );
+    return Map<String, dynamic>.from(
+      jsonDecode(resposta.corpo) as Map,
+    );
+  }
+
   Future<RespostaHttp> _get(String caminho) async {
     final cabecalhos = <String, String>{
       'Content-Type': 'application/json',
@@ -88,5 +134,57 @@ class ApiService {
       headers: cabecalhos,
     );
     return RespostaHttp(resposta.statusCode, resposta.body);
+  }
+
+  Future<RespostaHttp> _post(String caminho, String corpo) async {
+    final cabecalhos = <String, String>{
+      'Content-Type': 'application/json',
+    };
+    final token = _obterToken?.call();
+    if (token != null && token.isNotEmpty) {
+      cabecalhos['Authorization'] = 'Bearer $token';
+    }
+    final enviar = _enviarEscrita;
+    final resposta = enviar != null
+        ? await enviar(caminho, cabecalhos, corpo)
+        : await _postViaHttp(caminho, cabecalhos, corpo);
+    if (resposta.codigo != 200) {
+      throw Exception('Erro HTTP ${resposta.codigo}');
+    }
+    return resposta;
+  }
+
+  Future<RespostaHttp> _postViaHttp(
+    String caminho,
+    Map<String, String> cabecalhos,
+    String corpo,
+  ) async {
+    final resposta = await http.post(
+      Uri.parse('$_baseUrl$caminho'),
+      headers: cabecalhos,
+      body: corpo,
+    );
+    return RespostaHttp(resposta.statusCode, resposta.body);
+  }
+
+  Future<RespostaHttp> _postComBody(
+    String caminho,
+    String corpo,
+  ) async {
+    final cabecalhos = <String, String>{
+      'Content-Type': 'application/json',
+    };
+    final token = _obterToken?.call();
+    if (token != null && token.isNotEmpty) {
+      cabecalhos['Authorization'] = 'Bearer $token';
+    }
+    final enviar = _enviarEscrita;
+    final resposta = enviar != null
+        ? await enviar(caminho, cabecalhos, corpo)
+        : await _postViaHttp(caminho, cabecalhos, corpo);
+    if (resposta.codigo != 200) {
+      throw Exception('Erro HTTP ${resposta.codigo}');
+    }
+    return resposta;
   }
 }

@@ -14,9 +14,19 @@ void main() {
       Map<String, String> cabecalhos,
     )?
     enviar, {
+    Future<RespostaHttp> Function(
+      String caminho,
+      Map<String, String> cabecalhos,
+      String corpo,
+    )?
+    enviarEscrita,
     String? Function()? obterToken,
   }) {
-    return ApiService(enviar: enviar, obterToken: obterToken);
+    return ApiService(
+      enviar: enviar,
+      enviarEscrita: enviarEscrita,
+      obterToken: obterToken,
+    );
   }
 
   Map<String, dynamic> coletaJson({String id = 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee'}) {
@@ -160,6 +170,220 @@ void main() {
       );
 
       expect(() => servico.listarDisponiveis(), throwsA(isA<Exception>()));
+    });
+  });
+
+  group('ApiService - aceitar', () {
+    test('sucesso (200) retorna coleta aceita', () async {
+      final servico = servicoCom(
+        (caminho, cabecalhos) async => RespostaHttp(200, '[]'),
+        enviarEscrita: (caminho, cabecalhos, corpo) async {
+          expect(caminho, '/api/v1/collections/11111111-2222-4333-8444-555555555555/aceitar');
+          expect(corpo, isEmpty);
+          return RespostaHttp(200, jsonEncode({
+            'id': '11111111-2222-4333-8444-555555555555',
+            'status': 'ACEITA',
+            'provider_id': 'pppppppp-pppp-4ppp-8ppp-pppppppppppp',
+          }));
+        },
+      );
+
+      final resultado = await servico.aceitar('11111111-2222-4333-8444-555555555555');
+
+      expect(resultado['id'], '11111111-2222-4333-8444-555555555555');
+      expect(resultado['status'], 'ACEITA');
+      expect(resultado['provider_id'], 'pppppppp-pppp-4ppp-8ppp-pppppppppppp');
+    });
+
+    test('409 lança exceção (coleta já aceita por outro)', () async {
+      final servico = servicoCom(
+        (caminho, cabecalhos) async => RespostaHttp(200, '[]'),
+        enviarEscrita: (caminho, cabecalhos, corpo) async =>
+            RespostaHttp(409, '{"detail":"Coleta nao esta mais disponivel para aceite."}'),
+      );
+
+      expect(() => servico.aceitar('11111111-2222-4333-8444-555555555555'), throwsA(isA<Exception>()));
+    });
+
+    test('404 lança exceção (coleta não encontrada)', () async {
+      final servico = servicoCom(
+        (caminho, cabecalhos) async => RespostaHttp(200, '[]'),
+        enviarEscrita: (caminho, cabecalhos, corpo) async =>
+            RespostaHttp(404, '{"detail":"Recurso nao encontrado."}'),
+      );
+
+      expect(() => servico.aceitar('nonexistent-id'), throwsA(isA<Exception>()));
+    });
+
+    test('401 lança exceção (token inválido)', () async {
+      final servico = servicoCom(
+        (caminho, cabecalhos) async => RespostaHttp(200, '[]'),
+        enviarEscrita: (caminho, cabecalhos, corpo) async =>
+            RespostaHttp(401, '{"detail":"Nao autenticado."}'),
+      );
+
+      expect(() => servico.aceitar('11111111-2222-4333-8444-555555555555'), throwsA(isA<Exception>()));
+    });
+
+    test('403 lança exceção (perfil errado)', () async {
+      final servico = servicoCom(
+        (caminho, cabecalhos) async => RespostaHttp(200, '[]'),
+        enviarEscrita: (caminho, cabecalhos, corpo) async =>
+            RespostaHttp(403, '{"detail":"Acesso negado para este perfil."}'),
+      );
+
+      expect(() => servico.aceitar('11111111-2222-4333-8444-555555555555'), throwsA(isA<Exception>()));
+    });
+
+    test('erro de rede lança exceção', () async {
+      final servico = servicoCom(
+        (caminho, cabecalhos) async => RespostaHttp(200, '[]'),
+        enviarEscrita: (caminho, cabecalhos, corpo) async =>
+            throw Exception('sem conexao'),
+      );
+
+      expect(() => servico.aceitar('11111111-2222-4333-8444-555555555555'), throwsA(isA<Exception>()));
+    });
+
+    test('envia Authorization Bearer quando token disponível', () async {
+      final servico = servicoCom(
+        (caminho, cabecalhos) async => RespostaHttp(200, '[]'),
+        enviarEscrita: (caminho, cabecalhos, corpo) async {
+          expect(cabecalhos['Authorization'], 'Bearer jwt.teste');
+          return RespostaHttp(200, jsonEncode({'id': 'x', 'status': 'ACEITA', 'provider_id': 'y'}));
+        },
+        obterToken: () => 'jwt.teste',
+      );
+
+      await servico.aceitar('x');
+    });
+
+    test('não envia Authorization quando token é null', () async {
+      final servico = servicoCom(
+        (caminho, cabecalhos) async => RespostaHttp(200, '[]'),
+        enviarEscrita: (caminho, cabecalhos, corpo) async {
+          expect(cabecalhos.containsKey('Authorization'), isFalse);
+          return RespostaHttp(200, jsonEncode({'id': 'x', 'status': 'ACEITA', 'provider_id': 'y'}));
+        },
+        obterToken: () => null,
+      );
+
+      await servico.aceitar('x');
+    });
+  });
+
+  group('ApiService - avancarStatus', () {
+    test('sucesso (200) avança para EM_DESLOCAMENTO', () async {
+      final servico = servicoCom(
+        (caminho, cabecalhos) async => RespostaHttp(200, '[]'),
+        enviarEscrita: (caminho, cabecalhos, corpo) async {
+          expect(caminho, '/api/v1/collections/11111111-2222-4333-8444-555555555555/status');
+          expect(corpo, jsonEncode({'novo_status': 'EM_DESLOCAMENTO'}));
+          return RespostaHttp(200, jsonEncode({
+            'id': '11111111-2222-4333-8444-555555555555',
+            'status': 'EM_DESLOCAMENTO',
+          }));
+        },
+      );
+
+      final resultado = await servico.avancarStatus(
+        '11111111-2222-4333-8444-555555555555',
+        'EM_DESLOCAMENTO',
+      );
+
+      expect(resultado['id'], '11111111-2222-4333-8444-555555555555');
+      expect(resultado['status'], 'EM_DESLOCAMENTO');
+    });
+
+    test('409 lança exceção (transição inválida)', () async {
+      final servico = servicoCom(
+        (caminho, cabecalhos) async => RespostaHttp(200, '[]'),
+        enviarEscrita: (caminho, cabecalhos, corpo) async =>
+            RespostaHttp(409, '{"detail":"Transição inválida a partir de ACEITA."}'),
+      );
+
+      expect(
+        () => servico.avancarStatus('11111111-2222-4333-8444-555555555555', 'EM_DESLOCAMENTO'),
+        throwsA(isA<Exception>()),
+      );
+    });
+
+    test('404 lança exceção (coleta não encontrada)', () async {
+      final servico = servicoCom(
+        (caminho, cabecalhos) async => RespostaHttp(200, '[]'),
+        enviarEscrita: (caminho, cabecalhos, corpo) async =>
+            RespostaHttp(404, '{"detail":"Recurso não encontrado."}'),
+      );
+
+      expect(
+        () => servico.avancarStatus('nonexistent', 'EM_DESLOCAMENTO'),
+        throwsA(isA<Exception>()),
+      );
+    });
+
+    test('401 lança exceção (token inválido)', () async {
+      final servico = servicoCom(
+        (caminho, cabecalhos) async => RespostaHttp(200, '[]'),
+        enviarEscrita: (caminho, cabecalhos, corpo) async =>
+            RespostaHttp(401, '{"detail":"Nao autenticado."}'),
+      );
+
+      expect(
+        () => servico.avancarStatus('11111111-2222-4333-8444-555555555555', 'EM_DESLOCAMENTO'),
+        throwsA(isA<Exception>()),
+      );
+    });
+
+    test('403 lança exceção (perfil errado)', () async {
+      final servico = servicoCom(
+        (caminho, cabecalhos) async => RespostaHttp(200, '[]'),
+        enviarEscrita: (caminho, cabecalhos, corpo) async =>
+            RespostaHttp(403, '{"detail":"Acesso negado para este perfil."}'),
+      );
+
+      expect(
+        () => servico.avancarStatus('11111111-2222-4333-8444-555555555555', 'EM_DESLOCAMENTO'),
+        throwsA(isA<Exception>()),
+      );
+    });
+
+    test('erro de rede lança exceção', () async {
+      final servico = servicoCom(
+        (caminho, cabecalhos) async => RespostaHttp(200, '[]'),
+        enviarEscrita: (caminho, cabecalhos, corpo) async =>
+            throw Exception('sem conexao'),
+      );
+
+      expect(
+        () => servico.avancarStatus('11111111-2222-4333-8444-555555555555', 'EM_DESLOCAMENTO'),
+        throwsA(isA<Exception>()),
+      );
+    });
+
+    test('envia Authorization Bearer quando token disponível', () async {
+      final servico = servicoCom(
+        (caminho, cabecalhos) async => RespostaHttp(200, '[]'),
+        enviarEscrita: (caminho, cabecalhos, corpo) async {
+          expect(cabecalhos['Authorization'], 'Bearer jwt.teste');
+          return RespostaHttp(200, jsonEncode({'id': 'x', 'status': 'EM_DESLOCAMENTO'}));
+        },
+        obterToken: () => 'jwt.teste',
+      );
+
+      await servico.avancarStatus('x', 'EM_DESLOCAMENTO');
+    });
+
+    test('não envia Authorization quando token é null', () async {
+      final servico = servicoCom(
+        (caminho, cabecalhos) async => RespostaHttp(200, '[]'),
+        enviarEscrita: (caminho, cabecalhos, corpo) async {
+          expect(cabecalhos.containsKey('Authorization'), isFalse);
+          return RespostaHttp(200, jsonEncode({'id': 'x', 'status': 'EM_DESLOCAMENTO'}));
+        },
+        obterToken: () => null,
+      );
+
+      await servico.avancarStatus('x', 'EM_DESLOCAMENTO');
     });
   });
 }
