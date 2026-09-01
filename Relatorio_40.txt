@@ -1,0 +1,181 @@
+================================================================================
+RELATÓRIO 40 — MISSÃO 29: FLUXO DO PRESTADOR: REGISTRO INDIVIDUAL DOS PNEUS
+================================================================================
+Data: 2026-08-31
+Status: CONCLUÍDA
+================================================================================
+
+1. CONTEXTO
+================================================================================
+
+Missão 28 concluída. Flutter 142/142 testes passando. Backend intacto.
+Objetivo: implementar a tela de conferência para coleta em EM_CONFERENCIA,
+permitindo ao prestador registrar os pneus individualmente e concluir a
+conferência conforme os contratos existentes.
+
+================================================================================
+
+2. ANÁLISE PRÉVIA
+================================================================================
+
+- Backend já possuía endpoints para conferência:
+  - POST /api/v1/collections/{id}/conferencia/iniciar (EM_CONFERENCIA)
+  - POST /api/v1/collections/{id}/conferencia/pneus (registro individual)
+  - GET  /api/v1/collections/{id}/conferencia/pneus (listar registrados)
+  - POST /api/v1/collections/{id}/conferencia/concluir
+- OutboxService já continha:
+  - agendarRegistroPneus() — offline registration
+  - agendarConclusaoConferencia() — offline conclusion
+- ApiService.avancarStatus() já suportava EM_CONFERENCIA → EM_CARREGADA.
+- Nenhum novo endpoint/método necessário no backend.
+- Campos: DOT (WWYY), marca, medida, número de fogo (ou ilegível).
+- Validação DOT: 4 dígitos, semana 01-53.
+- Backend é autoridade: validação definitiva no servidor.
+
+================================================================================
+
+3. ARQUIVOS ALTERADOS/CEADOS
+================================================================================
+
+3.1. lib/core/api/api_service.dart (MODIFICADO)
+----------------------------------------------------------------
+
+Adicionados 2 métodos novos:
+- listarPneusConferencia(coletaId) — GET /conferencia/pneus
+- iniciarConferencia(coletaId) — POST /conferencia/iniciar (escrita)
+
+Total de linhas: cresceu ~30 linhas.
+
+3.2. lib/prestador/tela_prestador_conferencia.dart (CRIADO)
+----------------------------------------------------------------
+
+Nova tela completa para o fluxo de conferência:
+- Carrega itens declarados via iniciarConferencia (ou lista existente)
+- Formulário: DOT (WWYY), marca, medida, número de fogo
+- Switch "Número de fogo ilegível" desabilita campo nº fogo
+- Botão "Adicionar à lista" com validação local (DOT 4 dígitos, semana 01-53)
+- Lista visual dos pneus adicionados com opção de remover
+- Botão "Registrar pneu(s)" → agendarRegistroPneus() no Outbox
+- Botão "Concluir conferência" → agendarConclusaoConferencia() no Outbox
+- Estados: carregando, erro, lista vazia, formulário, processando
+- Suporte offline via Outbox preservado
+
+3.3. lib/prestador/tela_prestador_detalhe_coleta.dart (MODIFICADO)
+----------------------------------------------------------------
+
+Alterações:
+- Parâmetro obrigatório `outbox` adicionado ao construtor
+- Getter `_podeAbrirConferencia` (status == 'EM_CONFERENCIA')
+- Método `_abrirConferencia()` com navegação para TelaPrestadorConferencia
+- Botão "Abrir conferência" (Icon: Icons.assignment) adicionado ao build
+
+3.4. lib/prestador/tela_prestador_minhas_coletas.dart (MODIFICADO)
+----------------------------------------------------------------
+
+- Parâmetro `outbox` adicionado ao construtor
+- Passado para TelaPrestadorDetalheColeta
+
+3.5. lib/main.dart (MODIFICADO)
+----------------------------------------------------------------
+
+- Passa `outbox` para TelaPrestadorMinhasColetas
+
+3.6. test/tela_prestador_conferencia_test.dart (CRIADO)
+----------------------------------------------------------------
+
+10 novos testes:
+
+  1. exibe carregando e depois itens declarados
+  2. lista vazia mostra mensagem
+  3. erro de rede mostra itens vazios e formulário
+  4. formulário exibe campos obrigatórios
+  5. adicionar pneu à lista local
+  6. validação DOT rejeita valor inválido
+  7. botão ilegível desabilita campo número fogo
+  8. registrar pneus agendado no outbox
+  9. concluir conferência com sucesso
+  10. concluir sem pneus mostra aviso
+
+3.7. test/tela_prestador_minhas_coletas_test.dart (MODIFICADO)
+----------------------------------------------------------------
+
+- Todos os chamadores de TelaPrestadorDetalheColeta atualizados
+  com `outbox: _outboxDummy()`
+- Testes existentes preservados
+
+================================================================================
+
+4. IMPLEMENTAÇÃO
+================================================================================
+
+Comportamento:
+- Prestador navega para "Minhas Coletas" → seleciona coleta EM_CONFERENCIA
+  → detalhe exibe botão "Abrir conferência"
+- Ao tocar, navega para TelaPrestadorConferencia
+- Tela carrega itens declarados via iniciarConferencia (POST)
+- Prestador registra pneus individualmente: DOT, marca, medida, nº fogo
+  (ou marca como ilegível)
+- Cada pneu é adicionado à lista local com validação UX
+- "Registrar pneu(s)" agenda no Outbox (funciona offline)
+- "Concluir conferência" agenda conclusão no Outbox
+- SnackBar confirma cada ação
+- Backend revalida tudo no processamento do Outbox
+
+Backend não alterado. Firestore não utilizado. Dependências não adicionadas.
+
+================================================================================
+
+5. TESTES
+================================================================================
+
+Total Flutter: 152/152 passed
+
+Correção aplicada durante os testes:
+- Dois testes falharam inicialmente (registrar pneus / concluir conferência)
+- Causa: SharedPreferences não mockada no setUp do teste
+- Correção: adicionado SharedPreferences.setMockInitialValues({}) + import
+
+Distribuição dos novos testes (10):
+
+  Teste                                              | Resultado
+  ---------------------------------------------------|----------
+  exibe carregando e depois itens declarados          | OK
+  lista vazia mostra mensagem                         | OK
+  erro de rede mostra itens vazios e formulário       | OK
+  formulário exibe campos obrigatórios                | OK
+  adicionar pneu à lista local                        | OK
+  validação DOT rejeita valor inválido                | OK
+  botão ilegível desabilita campo nº fogo             | OK
+  registrar pneus agendado no outbox                  | OK
+  concluir conferência com sucesso                    | OK
+  concluir sem pneus mostra aviso                     | OK
+
+================================================================================
+
+6. RESULTADO
+================================================================================
+
+  flutter analyze → No issues found
+  flutter test    → 152/152 passed
+
+================================================================================
+
+7. PENDÊNCIAS
+================================================================================
+
+- Nenhuma pendência desta missão.
+- Backend não foi alterado.
+- Sincronização automática do Outbox já cobre os novos registros.
+
+================================================================================
+
+8. ESTADO DO PROJETO
+================================================================================
+
+  Backend:     intacto, 92+ testes passando
+  Flutter:     152/152 testes passando, analyze sem issues
+  Próxima:     Missão 30 (a ser definida)
+
+================================================================================
+FIM DO RELATÓRIO 40
+================================================================================

@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:meu_app_coleta_pneus/core/api/api_service.dart';
+import 'package:meu_app_coleta_pneus/core/outbox/outbox_service.dart';
 import 'package:meu_app_coleta_pneus/core/sessao/servico_sessao.dart';
 import 'package:meu_app_coleta_pneus/prestador/tela_prestador_minhas_coletas.dart';
 import 'package:meu_app_coleta_pneus/prestador/tela_prestador_detalhe_coleta.dart';
@@ -37,6 +38,8 @@ ApiService _apiCom({
   );
 }
 
+OutboxService _outboxDummy() => OutboxService();
+
 Widget _envolver(Widget child) {
   return MaterialApp(home: child);
 }
@@ -48,7 +51,7 @@ void main() {
         listar: (_, __) async =>
             RespostaHttp(200, jsonEncode([_coletaJson(), _coletaJson(id: 'bbbbbbbb-cccc-4ddd-8eee-ffffffffffff', codigo: 'COL-456')])),
       );
-      await tester.pumpWidget(_envolver(TelaPrestadorMinhasColetas(api: api)));
+      await tester.pumpWidget(_envolver(TelaPrestadorMinhasColetas(api: api, outbox: _outboxDummy())));
 
       expect(find.byType(CircularProgressIndicator), findsOneWidget);
 
@@ -62,7 +65,7 @@ void main() {
       final api = _apiCom(
         listar: (_, __) async => RespostaHttp(200, '[]'),
       );
-      await tester.pumpWidget(_envolver(TelaPrestadorMinhasColetas(api: api)));
+      await tester.pumpWidget(_envolver(TelaPrestadorMinhasColetas(api: api, outbox: _outboxDummy())));
       await tester.pumpAndSettle();
 
       expect(find.text('Nenhuma coleta atribuída'), findsOneWidget);
@@ -72,7 +75,7 @@ void main() {
       final api = _apiCom(
         listar: (_, __) async => throw Exception('sem conexao'),
       );
-      await tester.pumpWidget(_envolver(TelaPrestadorMinhasColetas(api: api)));
+      await tester.pumpWidget(_envolver(TelaPrestadorMinhasColetas(api: api, outbox: _outboxDummy())));
       await tester.pumpAndSettle();
 
       expect(find.text('Erro ao carregar coletas'), findsOneWidget);
@@ -83,7 +86,7 @@ void main() {
       final api = _apiCom(
         listar: (_, __) async => RespostaHttp(401, '{}'),
       );
-      await tester.pumpWidget(_envolver(TelaPrestadorMinhasColetas(api: api)));
+      await tester.pumpWidget(_envolver(TelaPrestadorMinhasColetas(api: api, outbox: _outboxDummy())));
       await tester.pumpAndSettle();
 
       expect(find.text('Erro ao carregar coletas'), findsOneWidget);
@@ -93,7 +96,7 @@ void main() {
       final api = _apiCom(
         listar: (_, __) async => RespostaHttp(200, jsonEncode([_coletaJson()])),
       );
-      await tester.pumpWidget(_envolver(TelaPrestadorMinhasColetas(api: api)));
+      await tester.pumpWidget(_envolver(TelaPrestadorMinhasColetas(api: api, outbox: _outboxDummy())));
       await tester.pumpAndSettle();
 
       expect(find.text('Aceita · 10 pneu(s)'), findsOneWidget);
@@ -103,7 +106,7 @@ void main() {
       final api = _apiCom(
         listar: (_, __) async => RespostaHttp(200, jsonEncode([_coletaJson()])),
       );
-      await tester.pumpWidget(_envolver(TelaPrestadorMinhasColetas(api: api)));
+      await tester.pumpWidget(_envolver(TelaPrestadorMinhasColetas(api: api, outbox: _outboxDummy())));
       await tester.pumpAndSettle();
 
       await tester.tap(find.text('COL-TEST123'));
@@ -120,7 +123,7 @@ void main() {
           return RespostaHttp(200, jsonEncode(chamadas == 1 ? [_coletaJson()] : []));
         },
       );
-      await tester.pumpWidget(_envolver(TelaPrestadorMinhasColetas(api: api)));
+      await tester.pumpWidget(_envolver(TelaPrestadorMinhasColetas(api: api, outbox: _outboxDummy())));
       await tester.pumpAndSettle();
 
       expect(find.text('COL-TEST123'), findsOneWidget);
@@ -137,7 +140,7 @@ void main() {
       final api = _apiCom();
       final coleta = _coletaJson();
       await tester.pumpWidget(_envolver(
-        TelaPrestadorDetalheColeta(api: api, coleta: coleta),
+        TelaPrestadorDetalheColeta(api: api, outbox: _outboxDummy(), coleta: coleta),
       ));
       await tester.pumpAndSettle();
 
@@ -151,7 +154,7 @@ void main() {
       final api = _apiCom();
       final coleta = _coletaJson(status: 'EM_DESLOCAMENTO');
       await tester.pumpWidget(_envolver(
-        TelaPrestadorDetalheColeta(api: api, coleta: coleta),
+        TelaPrestadorDetalheColeta(api: api, outbox: _outboxDummy(), coleta: coleta),
       ));
       await tester.pumpAndSettle();
 
@@ -171,7 +174,7 @@ void main() {
       );
       final coleta = _coletaJson();
       await tester.pumpWidget(_envolver(
-        TelaPrestadorDetalheColeta(api: api, coleta: coleta),
+        TelaPrestadorDetalheColeta(api: api, outbox: _outboxDummy(), coleta: coleta),
       ));
       await tester.pumpAndSettle();
 
@@ -190,7 +193,7 @@ void main() {
       );
       final coleta = _coletaJson();
       await tester.pumpWidget(_envolver(
-        TelaPrestadorDetalheColeta(api: api, coleta: coleta),
+        TelaPrestadorDetalheColeta(api: api, outbox: _outboxDummy(), coleta: coleta),
       ));
       await tester.pumpAndSettle();
 
@@ -207,7 +210,7 @@ void main() {
       );
       final coleta = _coletaJson();
       await tester.pumpWidget(_envolver(
-        TelaPrestadorDetalheColeta(api: api, coleta: coleta),
+        TelaPrestadorDetalheColeta(api: api, outbox: _outboxDummy(), coleta: coleta),
       ));
       await tester.pumpAndSettle();
 
@@ -224,7 +227,7 @@ void main() {
       );
       final coleta = _coletaJson();
       await tester.pumpWidget(_envolver(
-        TelaPrestadorDetalheColeta(api: api, coleta: coleta),
+        TelaPrestadorDetalheColeta(api: api, outbox: _outboxDummy(), coleta: coleta),
       ));
       await tester.pumpAndSettle();
 
@@ -238,7 +241,7 @@ void main() {
       final api = _apiCom();
       final coleta = _coletaJson();
       await tester.pumpWidget(_envolver(
-        TelaPrestadorDetalheColeta(api: api, coleta: coleta),
+        TelaPrestadorDetalheColeta(api: api, outbox: _outboxDummy(), coleta: coleta),
       ));
       await tester.pumpAndSettle();
 
@@ -251,11 +254,110 @@ void main() {
       final api = _apiCom();
       final coleta = _coletaJson();
       await tester.pumpWidget(_envolver(
-        TelaPrestadorDetalheColeta(api: api, coleta: coleta),
+        TelaPrestadorDetalheColeta(api: api, outbox: _outboxDummy(), coleta: coleta),
       ));
       await tester.pumpAndSettle();
 
       expect(find.text('Rua Teste, 123, Centro'), findsOneWidget);
+    });
+
+    testWidgets('botão conferência aparece para EM_DESLOCAMENTO', (tester) async {
+      final api = _apiCom();
+      final coleta = _coletaJson(status: 'EM_DESLOCAMENTO');
+      await tester.pumpWidget(_envolver(
+        TelaPrestadorDetalheColeta(api: api, outbox: _outboxDummy(), coleta: coleta),
+      ));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Iniciar conferência'), findsOneWidget);
+      expect(find.text('Iniciar deslocamento'), findsNothing);
+    });
+
+    testWidgets('botão conferência não aparece para ACEITA', (tester) async {
+      final api = _apiCom();
+      final coleta = _coletaJson(status: 'ACEITA');
+      await tester.pumpWidget(_envolver(
+        TelaPrestadorDetalheColeta(api: api, outbox: _outboxDummy(), coleta: coleta),
+      ));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Iniciar conferência'), findsNothing);
+    });
+
+    testWidgets('iniciar conferência com sucesso atualiza status', (tester) async {
+      final api = _apiCom(
+        escrita: (caminho, cabecalhos, corpo) async {
+          expect(caminho, contains('/status'));
+          expect(corpo, contains('EM_CONFERENCIA'));
+          return RespostaHttp(200, jsonEncode({
+            'id': 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee',
+            'status': 'EM_CONFERENCIA',
+          }));
+        },
+      );
+      final coleta = _coletaJson(status: 'EM_DESLOCAMENTO');
+      await tester.pumpWidget(_envolver(
+        TelaPrestadorDetalheColeta(api: api, outbox: _outboxDummy(), coleta: coleta),
+      ));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Iniciar conferência'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Conferência iniciada!'), findsOneWidget);
+      expect(find.text('Em conferência'), findsOneWidget);
+      expect(find.text('Iniciar conferência'), findsNothing);
+    });
+
+    testWidgets('409 na conferência mostra erro de transição', (tester) async {
+      final api = _apiCom(
+        escrita: (caminho, cabecalhos, corpo) async =>
+            RespostaHttp(409, '{"detail":"Transição inválida."}'),
+      );
+      final coleta = _coletaJson(status: 'EM_DESLOCAMENTO');
+      await tester.pumpWidget(_envolver(
+        TelaPrestadorDetalheColeta(api: api, outbox: _outboxDummy(), coleta: coleta),
+      ));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Iniciar conferência'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Transição inválida. Status atual pode ter mudado.'), findsOneWidget);
+    });
+
+    testWidgets('401 na conferência mostra sessão expirada', (tester) async {
+      final api = _apiCom(
+        escrita: (caminho, cabecalhos, corpo) async =>
+            RespostaHttp(401, '{}'),
+      );
+      final coleta = _coletaJson(status: 'EM_DESLOCAMENTO');
+      await tester.pumpWidget(_envolver(
+        TelaPrestadorDetalheColeta(api: api, outbox: _outboxDummy(), coleta: coleta),
+      ));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Iniciar conferência'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Sessão expirada. Faça login novamente.'), findsOneWidget);
+    });
+
+    testWidgets('erro de rede na conferência mostra mensagem genérica', (tester) async {
+      final api = _apiCom(
+        escrita: (caminho, cabecalhos, corpo) async =>
+            throw Exception('sem conexao'),
+      );
+      final coleta = _coletaJson(status: 'EM_DESLOCAMENTO');
+      await tester.pumpWidget(_envolver(
+        TelaPrestadorDetalheColeta(api: api, outbox: _outboxDummy(), coleta: coleta),
+      ));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Iniciar conferência'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Erro de conexão. Tente novamente.'), findsOneWidget);
     });
   });
 }

@@ -107,6 +107,34 @@ class ApiService {
     );
   }
 
+  /// Lista pneus já registrados na conferência (somente PRESTADOR).
+  ///
+  /// Retorna lista de pneus com dot, numero_fogo, idade, alerta, marca, medida.
+  Future<List<Map<String, dynamic>>> listarPneusConferencia(
+    String coletaId,
+  ) async {
+    final resposta = await _get(
+      '/api/v1/collections/$coletaId/conferencia/pneus',
+    );
+    return (jsonDecode(resposta.corpo) as List<dynamic>)
+        .map((item) => Map<String, dynamic>.from(item as Map))
+        .toList();
+  }
+
+  /// Inicia a conferência de uma coleta (somente PRESTADOR).
+  ///
+  /// Transição: EM_DESLOCAMENTO → EM_CONFERENCIA.
+  /// Retorna {id, status, itens_declarados}.
+  Future<Map<String, dynamic>> iniciarConferencia(String coletaId) async {
+    final resposta = await _post(
+      '/api/v1/collections/$coletaId/conferencia/iniciar',
+      '',
+    );
+    return Map<String, dynamic>.from(
+      jsonDecode(resposta.corpo) as Map,
+    );
+  }
+
   Future<RespostaHttp> _get(String caminho) async {
     final cabecalhos = <String, String>{
       'Content-Type': 'application/json',

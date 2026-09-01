@@ -146,6 +146,7 @@ class TelaPrincipal extends StatelessWidget {
                   MaterialPageRoute(
                     builder: (_) => TelaPrestadorMinhasColetas(
                       api: api,
+                      outbox: outbox,
                     ),
                   ),
                 );

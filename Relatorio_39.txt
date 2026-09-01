@@ -1,0 +1,127 @@
+================================================================================
+RELATÓRIO 39 — MISSÃO 28: FLUXO DO PRESTADOR: INÍCIO DA CONFERÊNCIA
+================================================================================
+Data: 2026-08-31
+Status: CONCLUÍDA
+================================================================================
+
+1. CONTEXTO
+================================================================================
+
+Missão 27 concluída. Flutter 136/136 testes passando. Backend intacto.
+Objetivo: implementar o fluxo para o Prestador iniciar a conferência de uma
+coleta em estado EM_DESLOCAMENTO.
+
+================================================================================
+
+2. ANÁLISE PRÉVIA
+================================================================================
+
+- ApiService.avancarStatus() já suporta EM_DESLOCAMENTO → EM_CONFERENCIA
+  (post /api/v1/collections/{id}/status com {"novo_status": "EM_CONFERENCIA"}).
+- Backend já aceita a transição (collections.py:52, linha TRANSICOES_VALIDAS).
+- Nenhum novo endpoint/método necessário no ApiService.
+- TelaPrestadorDetalheColeta precisava apenas do botão para EM_DESLOCAMENTO.
+
+================================================================================
+
+3. ARQUIVOS ALTERADOS
+================================================================================
+
+3.1. lib/prestador/tela_prestador_detalhe_coleta.dart
+----------------------------------------------------------------
+
+Alterações:
+- Doc comment atualizado: transições suportadas agora incluem EM_DESLOCAMENTO →
+  EM_CONFERENCIA.
+- Getter _podeIniciarConferencia adicionado (status == 'EM_DESLOCAMENTO').
+- Método _iniciarConferencia() adicionado (mesmo padrão de
+  _iniciarDeslocamento: avancarStatus + setState + SnackBar + tratamento erro).
+- Botão "Iniciar conferência" (Icon: Icons.assignment) adicionado ao build,
+  condicionado a _podeIniciarConferencia.
+
+Linha(s) modificada(s): 8-9, 39, 66-88 (novo bloco), 189-201 (novo botão).
+Total de linhas: 218 → 252 (+34).
+
+Nenhuma dependência adicionada. Nenhum import adicionado.
+
+3.2. test/tela_prestador_minhas_coletas_test.dart
+----------------------------------------------------------------
+
+7 novos testes adicionados ao group TelaPrestadorDetalheColeta:
+
+  1. botão conferência aparece para EM_DESLOCAMENTO
+  2. botão conferência não aparece para ACEITA
+  3. iniciar conferência com sucesso atualiza status (verifica /status no
+     caminho e EM_CONFERENCIA no corpo)
+  4. 409 na conferência mostra erro de transição
+  5. 401 na conferência mostra sessão expirada
+  6. erro de rede na conferência mostra mensagem genérica
+
+Total de linhas: 261 → 343 (+82).
+
+================================================================================
+
+4. IMPLEMENTAÇÃO
+================================================================================
+
+Comportamento:
+- Na TelaPrestadorDetalheColeta, quando a coleta está em EM_DESLOCAMENTO,
+  aparece o botão "Iniciar conferência".
+- Ao tocar, chama ApiService.avancarStatus(id, 'EM_CONFERENCIA').
+- Sucesso: status atualiza para EM_CONFERENCIA, SnackBar "Conferência
+  iniciada!", botão desaparece.
+- Falha: tratamento idêntico ao deslocamento (401/403/404/409/rede).
+- Botão "Iniciar deslocamento" continua funcionando para ACEITA.
+- Os dois botões nunca aparecem simultaneamente (estados mutuamente exclusivos).
+
+Backend não alterado. Firestore não utilizado. Dependências não adicionadas.
+
+================================================================================
+
+5. TESTES
+================================================================================
+
+Total Flutter: 142/142 passed
+
+Distribuição dos novos testes (7):
+
+  Teste                                              | Resultado
+  ---------------------------------------------------|----------
+  botão conferência aparece para EM_DESLOCAMENTO     | OK
+  botão conferência não aparece para ACEITA           | OK
+  iniciar conferência sucesso atualiza status         | OK
+  009 na conferência mostra erro de transição         | OK
+  01 na conferência mostra sessão expirada            | OK
+  rro de rede na conferência mostra msg genérica      | OK
+  egressão: 135 testes anteriores continuam OK        | OK
+
+================================================================================
+
+6. RESULTADO
+================================================================================
+
+  flutter analyze → No issues found
+  flutter test    → 142/142 passed
+
+================================================================================
+
+7. PENDÊNCIAS
+================================================================================
+
+- Nenhuma pendência desta missão.
+- Registro individual dos pneus (EM_CONFERENCIA → CARREGADA) é missão futura.
+- Backend não foi alterado.
+
+================================================================================
+
+8. ESTADO DO PROJETO
+================================================================================
+
+  Backend:     intacto, 92+ testes passando
+  Flutter:     142/142 testes passando, analyze sem issues
+  Próxima:     Missão 29 (a ser definida)
+
+================================================================================
+FIM DO RELATÓRIO 39
+================================================================================

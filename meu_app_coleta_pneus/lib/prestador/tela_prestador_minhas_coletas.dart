@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../core/api/api_service.dart';
+import '../core/outbox/outbox_service.dart';
 import 'tela_prestador_detalhe_coleta.dart';
 
 /// Tela que lista coletas atribuídas ao Prestador (qualquer status).
@@ -8,9 +9,14 @@ import 'tela_prestador_detalhe_coleta.dart';
 /// Consome GET /api/v1/collections (PRESTADOR: filtra por provider_id).
 /// Estados: carregando, vazio, erro, dados. Pull-to-refresh.
 class TelaPrestadorMinhasColetas extends StatefulWidget {
-  const TelaPrestadorMinhasColetas({super.key, required this.api});
+  const TelaPrestadorMinhasColetas({
+    super.key,
+    required this.api,
+    required this.outbox,
+  });
 
   final ApiService api;
+  final OutboxService outbox;
 
   @override
   State<TelaPrestadorMinhasColetas> createState() =>
@@ -77,6 +83,7 @@ class _TelaPrestadorMinhasColetasState
       MaterialPageRoute(
         builder: (_) => TelaPrestadorDetalheColeta(
           api: widget.api,
+          outbox: widget.outbox,
           coleta: coleta,
         ),
       ),

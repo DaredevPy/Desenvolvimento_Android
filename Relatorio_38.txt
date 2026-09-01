@@ -1,0 +1,136 @@
+================================================================================
+RELATÓRIO 38 — MISSÃO 27: FLUXO DO PRESTADOR: MINHAS COLETAS ACEITAS
+================================================================================
+Data: 2026-08-31
+Status: CONCLUÍDA (implementação prévia íntegra)
+================================================================================
+
+1. CONTEXTO
+================================================================================
+
+O projeto parou após a Missão 26. A Missão 27 foi solicitada para implementar
+a tela do Prestador para listar suas coletas já aceitas, usando exclusivamente
+o backend FastAPI.
+
+Estado anterior à missão:
+- Flutter: 113/113 testes passando, flutter analyze sem issues
+- Backend FastAPI/PostgreSQL intacto e funcional
+- ApiService já possui listarMinhasColetas(), listarDisponiveis() e aceitar()
+- Sessão/JWT e Outbox funcionais
+- Firestore ainda existe mas não deve ser usado no novo fluxo
+
+================================================================================
+
+2. ANÁLISE TÉCNICA
+================================================================================
+
+Após inspeção completa do código, constatou-se que a funcionalidade da Missão 27
+já estava completamente implementada em missões anteriores (Missão 25 — Fluxo do
+Cliente conectado ao Backend).
+
+Arquivos inspecionados (sem alterações necessárias):
+
+  lib/prestador/tela_prestador_minhas_coletas.dart  (186 linhas)
+  lib/prestador/tela_prestador_detalhe_coleta.dart   (218 linhas)
+  lib/core/api/api_service.dart                      (190 linhas)
+  lib/main.dart                                      (163 linhas)
+  test/tela_prestador_minhas_coletas_test.dart       (261 linhas, 14 testes)
+
+================================================================================
+
+3. CONFORMIDADE COM ESCopo
+================================================================================
+
+Requisito                                    | Status
+---------------------------------------------|--------
+Criar/adaptar TelaPrestadorMinhasColetas      | ✓
+Usar ApiService.listarMinhasColetas()         | ✓
+Não usar Firestore                            | ✓
+Estados: carregando, vazio, erro, dados       | ✓
+Pull-to-refresh + botão refresh               | ✓
+Exibir informações da coleta de forma simples | ✓
+Integração com TelaPrincipal do PRESTADOR     | ✓
+Manter ServicoSessao e Authorization          | ✓
+Criar testes widget/unitários                 | ✓
+
+Detalhes:
+
+- A tela usa ApiService.listarMinhasColetas() (linha 31) — zero imports Firestore
+- FutureBuilder com 4 ramos: waiting (CircularProgressIndicator), error
+  (mensagem + "Tentar novamente"), empty ("Nenhuma coleta atribuída"), data
+  (ListView.builder com Cards)
+- RefreshIndicator para pull-to-refresh + IconButton na AppBar
+- Cada Card exibe: código identificador, status com cor, quantidade total de pneus
+- TelaPrincipal (main.dart) possui botão "Minhas Coletas" que navega para a tela
+- ServicoSessao com Authorization Bearer injetado via obterToken callback
+
+================================================================================
+
+4. TESTES — 14 CENÁRIOS
+================================================================================
+
+TelaPrestadorMinhasColetas (7 testes):
+
+  1. Exibe carregando e depois lista de coletas
+  2. Lista vazia mostra mensagem
+  3. Erro de rede mostra mensagem e botão tentar novamente
+  4. 401 mostra erro
+  5. Exibe status e quantidade de pneus
+  6. Selecionar coleta navega para detalhe
+  7. Botão refresh recarrega lista
+
+TelaPrestadorDetalheColeta (7 testes):
+
+  8. Exibe detalhes da coleta
+  9. Botão deslocamento aparece apenas para ACEITA
+  10. Iniciar deslocamento com sucesso atualiza status
+  11. 409 no deslocamento mostra erro de transição
+  12. 401 no deslocamento mostra sessão expirada
+  13. Erro de rede no deslocamento mostra mensagem genérica
+  14. Exibe itens declarados e endereço formatado
+
+================================================================================
+
+5. RESULTADOS DE VERIFICAÇÃO
+================================================================================
+
+  flutter analyze → No issues found
+  flutter test    → 136/136 passed
+
+Contagem total de testes Flutter: 136
+  - api_service_test:        3
+  - cliente_fluxo_test:     27
+  - logout_test:             1
+  - models_test:             8
+  - outbox_politica_erros:  17
+  - outbox_test:            16
+  - sessao_test:             8
+  - sincronizacao_auto:      7
+  - tela_login_test:         6
+  - tela_prestador_listar:  12
+  - tela_prestador_minhas:  14
+  - widget_test:             4 (smoke)
+
+================================================================================
+
+6. PENDÊNCIAS / OBSERVAÇÕES
+================================================================================
+
+- Nenhuma pendência desta missão. Tudo implementado e testado.
+- Fluxo de conferência (EM_DESLOCAMENTO → EM_CONFERENCIA) é escopo de missão
+  futura.
+- Firestore legado permanece no código mas não é utilizado neste fluxo.
+- Backend não foi alterado nesta missão.
+
+================================================================================
+
+7. ESTADO DO PROJETO AO FINAL DA MISSÃO
+================================================================================
+
+  Backend:     intacto, 92+ testes passando
+  Flutter:     136/136 testes passando, analyze sem issues
+  Próxima:     Missão 28 (a ser definida)
+
+================================================================================
+FIM DO RELATÓRIO 38
+================================================================================

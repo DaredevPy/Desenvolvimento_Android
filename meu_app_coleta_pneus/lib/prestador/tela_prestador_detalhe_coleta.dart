@@ -1,20 +1,23 @@
 import 'package:flutter/material.dart';
 
 import '../core/api/api_service.dart';
+import '../core/outbox/outbox_service.dart';
+import 'tela_prestador_conferencia.dart';
 
 /// Tela de detalhe de uma coleta do Prestador.
 ///
 /// Exibe informações da coleta e permite avançar o status quando aplicável.
-/// Transições suportadas: ACEITA → EM_DESLOCAMENTO.
-/// Conferência (EM_DESLOCAMENTO → EM_CONFERENCIA) será implementada em missão futura.
+/// Transições suportadas: ACEITA → EM_DESLOCAMENTO, EM_DESLOCAMENTO → EM_CONFERENCIA.
 class TelaPrestadorDetalheColeta extends StatefulWidget {
   const TelaPrestadorDetalheColeta({
     super.key,
     required this.api,
+    required this.outbox,
     required this.coleta,
   });
 
   final ApiService api;
+  final OutboxService outbox;
   final Map<String, dynamic> coleta;
 
   @override
@@ -36,6 +39,8 @@ class _TelaPrestadorDetalheColetaState
   String get _status => _coleta['status'] as String? ?? '';
 
   bool get _podeIniciarDeslocamento => _status == 'ACEITA';
+  bool get _podeIniciarConferencia => _status == 'EM_DESLOCAMENTO';
+  bool get _podeAbrirConferencia => _status == 'EM_CONFERENCIA';
 
   Future<void> _iniciarDeslocamento() async {
     if (_processando) return;
@@ -61,6 +66,45 @@ class _TelaPrestadorDetalheColetaState
     } finally {
       if (mounted) setState(() => _processando = false);
     }
+  }
+
+  Future<void> _iniciarConferencia() async {
+    if (_processando) return;
+    setState(() => _processando = true);
+
+    try {
+      final resultado = await widget.api.avancarStatus(
+        _coleta['id'],
+        'EM_CONFERENCIA',
+      );
+      if (!mounted) return;
+      setState(() {
+        _coleta = {..._coleta, ...resultado};
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Conferência iniciada!')),
+      );
+    } on Exception catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(_mensagemErro(e))),
+      );
+    } finally {
+      if (mounted) setState(() => _processando = false);
+    }
+  }
+
+  void _abrirConferencia() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => TelaPrestadorConferencia(
+          api: widget.api,
+          outbox: widget.outbox,
+          coleta: _coleta,
+        ),
+      ),
+    );
   }
 
   String _mensagemErro(Exception e) {
@@ -197,6 +241,30 @@ class _TelaPrestadorDetalheColetaState
                         )
                       : const Icon(Icons.directions_car),
                   label: const Text('Iniciar deslocamento'),
+                ),
+              ),
+            if (_podeIniciarConferencia)
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton.icon(
+                  onPressed: _processando ? null : _iniciarConferencia,
+                  icon: _processando
+                      ? const SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.assignment),
+                  label: const Text('Iniciar conferência'),
+                ),
+              ),
+            if (_podeAbrirConferencia)
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton.icon(
+                  onPressed: _abrirConferencia,
+                  icon: const Icon(Icons.playlist_add_check),
+                  label: const Text('Abrir conferência'),
                 ),
               ),
           ],
