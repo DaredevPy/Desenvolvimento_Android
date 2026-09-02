@@ -1,0 +1,155 @@
+================================================================================
+RELATÓRIO 42 — MISSÃO 31: FINALIZAÇÃO DA COLETA PELO PRESTADOR
+================================================================================
+Data: 2026-09-01
+Status: CONCLUÍDA
+================================================================================
+
+1. CONTEXTO E OBJETIVO
+================================================================================
+
+Partida:
+- Missão 30 concluída com sucesso (conferência do prestador via Outbox).
+- Flutter com 154/154 testes passando e 0 issues no flutter analyze.
+- Backend FastAPI com fechamento financeiro pronto na rota POST /finalizar.
+- OutboxService já continha agendarFinalizacaoColeta() com corpo vazio estrito.
+
+Objetivo da Missão 31:
+- Implementar o último passo operacional do Prestador no Flutter:
+  transição CARREGADA -> FINALIZADA.
+- Permitir a finalização exclusivamente quando a coleta estiver no estado CARREGADA.
+- Utilizar estritamente OutboxService.agendarFinalizacaoColeta().
+- Garantir que o Flutter NUNCA envie valores financeiros, não calcule preços
+  e não altere snapshots contábeis.
+- Preservar o funcionamento offline-first e a chave de idempotência UUIDv4
+  (X-Idempotency-Key).
+- Manter o backend FastAPI/PostgreSQL como a autoridade absoluta sobre regras
+  de preço e fechamento financeiro.
+- Garantir 100% de cobertura com testes e zero regressões.
+
+================================================================================
+
+2. ANÁLISE PRÉVIA E REGRAS INVIOLÁVEIS
+================================================================================
+
+2.1. Regras de Negócio e Segurança:
+- Restrição de Estado: botão "Finalizar coleta" só é renderizado quando status == CARREGADA.
+- Autoridade Financeira: rota /api/v1/collections/{id}/finalizar exige corpo vazio {}.
+  O cálculo de valor por regra de preço e snapshots (cliente/prestador) é feito
+  100% de forma atômica no banco de dados do servidor FastAPI com trava FOR UPDATE.
+- Idempotência: chave UUIDv4 gerada no OutboxService e repassada via cabeçalho
+  X-Idempotency-Key para prevenir duplicações acidentais na rede.
+- Resiliência Offline: operação é enfileirada no OutboxStore local e sincronizada
+  assim que a conexão estiver estável.
+- Sem Dependências Extras: sem uso de Firestore ou libs de terceiros não autorizadas.
+
+================================================================================
+
+3. ARQUIVOS ALTERADOS / CRIADOS
+================================================================================
+
+3.1. lib/prestador/tela_prestador_detalhe_coleta.dart (MODIFICADO)
+------------------------------------------------------------------
+- Adicionado getter `_podeFinalizar => _status == 'CARREGADA'`.
+- Implementado método `_finalizarColeta()` que invoca `outbox.agendarFinalizacaoColeta()`.
+- Atualizado `_abrirConferencia()` para capturar o retorno de conclusão e atualizar
+  o estado local para CARREGADA.
+- Implementado `didUpdateWidget` para sincronização de estado se a coleta externa mudar.
+- Adicionado botão "Finalizar coleta" (verde com ícone check_circle), visível
+  exclusivamente quando a coleta estiver em status CARREGADA.
+- Atualização local do status para FINALIZADA e exibição de SnackBar de confirmação.
+
+3.2. lib/prestador/tela_prestador_conferencia.dart (MODIFICADO)
+--------------------------------------------------------------
+- Atualizado `Navigator.pop(context, true)` na conclusão bem-sucedida da conferência,
+  notificando a tela pai (detalhe) da transição para CARREGADA.
+
+3.3. test/tela_prestador_minhas_coletas_test.dart (MODIFICADO)
+--------------------------------------------------------------
+- Adicionado setup com `SharedPreferences.setMockInitialValues({})`.
+- Adicionados 3 novos cenários de testes automatizados para a finalização:
+  1. Visibilidade condicional estrita do botão "Finalizar coleta" (apenas em CARREGADA).
+  2. Finalização válida com agendamento no Outbox com corpo vazio {} (sem dados financeiros).
+  3. Resiliência offline garantindo que a operação permaneça pendente com chave UUIDv4 válida.
+
+================================================================================
+
+4. RESULTADOS DE TESTES E QUALIDADE
+================================================================================
+
+4.1. Análise Estática:
+- Comando: `flutter analyze`
+- Resultado: No issues found! (0 warnings, 0 errors, 0 lints)
+
+4.2. Execução dos Testes:
+- Comando: `flutter test`
+- Resultado: 157 / 157 testes passando (100% de sucesso).
+
+4.3. Distribuição de Testes no Flutter:
+- Sessão, Autenticação, Armazenamento Seguro, Logout: 25 testes
+- Outbox, Store, Classificação de Erros HTTP, Sincronização: 46 testes
+- Fluxo do Cliente (Criação offline, Minhas Coletas): 21 testes
+- Fluxo do Prestador (Pendentes, Aceite Concorrente, Minhas Coletas, Detalhes,
+  Conferência individual com DOT/fogo, Conclusão e Finalização): 65 testes
+- Total: 157 testes passando.
+
+================================================================================
+
+5. ESTADO GERAL DO PROJETO (ONDE PARAMOS)
+================================================================================
+
+5.1. Backend FastAPI (backend/):
+- Banco relacional PostgreSQL 15+ conteinerizado com Docker.
+- Autenticação e RBAC completo: CLIENTE, PRESTADOR, ADMINISTRADOR.
+- Máquina de estados completa da Coleta:
+  SOLICITADA -> ACEITA -> EM_DESLOCAMENTO -> EM_CONFERENCIA -> CARREGADA -> FINALIZADA.
+- Registro de conferência com controle de duplicidade de número de fogo por coleta,
+  alerta visual de DOT >= 7 anos (sem torná-lo unique) e cálculo de idade no servidor.
+- Fechamento financeiro atômico em /finalizar com snapshots imutáveis e lançamentos
+  desacoplados para cliente e prestador.
+- API administrativa de auditoria e leitura com proteção RBAC.
+
+5.2. Frontend Flutter (meu_app_coleta_pneus/):
+- Autenticação, sessão persistente e fluxo de login/logout seguro.
+- Arquitetura Offline-First robusta via Outbox Pattern (criação, conferência, pneus,
+  conclusão e finalização), com idempotência garantida por UUIDv4.
+- Fluxo completo do CLIENTE:
+  * Criar coleta com itens e endereço de origem.
+  * Listar minhas coletas e acompanhar status.
+- Fluxo operacional completo do PRESTADOR:
+  * Listar coletas disponíveis e aceitar coletas concorrentemente.
+  * Listar minhas coletas atribuídas.
+  * Visualizar detalhe e endereço da coleta.
+  * Iniciar deslocamento (ACEITA -> EM_DESLOCAMENTO).
+  * Iniciar conferência (EM_DESLOCAMENTO -> EM_CONFERENCIA).
+  * Registrar pneus individualmente (DOT, marca, medida, nº fogo ou ilegível).
+  * Concluir conferência (EM_CONFERENCIA -> CARREGADA).
+  * Finalizar coleta (CARREGADA -> FINALIZADA).
+
+================================================================================
+
+6. DIRETRIZES E PRÓXIMAS ETAPAS RECOMENDADAS
+================================================================================
+
+6.1. Próximas Missões Sugeridas:
+- Missão 32: Visualização de Resumo / Comprovante da Coleta Finalizada
+  * Exibir tela de resumo/comprovante com dados consolidados da conferência
+    (quantidade de pneus coletados, registros individuais, status final).
+  * Respeitar as permissões de cada perfil (o prestador vê os dados operacionais;
+    os valores financeiros só são exibidos onde o backend explicitamente autorizar
+    e fornecer via endpoints de leitura).
+- Missões Subsequentes:
+  * Fluxo de Contestação da Coleta no Cliente (FINALIZADA -> CONTESTADA).
+  * Painel e telas da Dashboard Administrativa no Flutter (leitura de coletas,
+    regras de preço e logs de auditoria).
+
+6.2. Cuidados Invioláveis para Próximos Desenvolvimentos:
+- Backend permanece a única fonte de verdade e integridade.
+- DOT nunca é tratado como chave única no banco ou no app.
+- Manter o padrão de código enxuto, sem código morto e com tipagem estrita.
+- Todo novo fluxo ou endpoint consumido no Flutter deve ter cobertura de testes
+  unitários e de widget com mock determinístico de transporte HTTP/Outbox.
+
+================================================================================
+FIM DO RELATÓRIO 42
+================================================================================

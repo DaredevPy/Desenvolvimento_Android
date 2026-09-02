@@ -135,6 +135,22 @@ class ApiService {
     );
   }
 
+  /// Contesta uma coleta FINALIZADA (somente CLIENTE dono da coleta).
+  ///
+  /// Transição: FINALIZADA → CONTESTADA.
+  /// Corpo vazio estrito: {}.
+  /// Não envia X-Idempotency-Key (decisão arquitetural).
+  /// Retorna mapa com {id, status}.
+  Future<Map<String, dynamic>> contestarColeta(String coletaId) async {
+    final resposta = await _post(
+      '/api/v1/collections/$coletaId/contestar',
+      '{}',
+    );
+    return Map<String, dynamic>.from(
+      jsonDecode(resposta.corpo) as Map,
+    );
+  }
+
   Future<RespostaHttp> _get(String caminho) async {
     final cabecalhos = <String, String>{
       'Content-Type': 'application/json',

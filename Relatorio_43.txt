@@ -1,0 +1,150 @@
+================================================================================
+RELATÓRIO 43 — MISSÃO 32: RESUMO DA COLETA FINALIZADA
+================================================================================
+Data: 2026-09-01
+Status: CONCLUÍDA
+================================================================================
+
+1. CONTEXTO E OBJETIVO
+================================================================================
+
+Partida:
+- Missão 31 concluída com sucesso (finalização da coleta pelo prestador CARREGADA -> FINALIZADA).
+- Flutter com 157/157 testes passando e 0 issues no flutter analyze.
+- Backend FastAPI já fornecia todos os dados necessários via GET /conferencia/pneus
+  e GET /collections.
+
+Objetivo da Missão 32:
+- Criar a tela de resumo/comprovante consolidado da coleta finalizada no Flutter.
+- Tela acessível exclusivamente para coletas no status FINALIZADA.
+- Exibir identificação, status, endereço de origem, datas, quantidade total de
+  pneus e listagem dos pneus com DOT, marca, medida, número de fogo (ou indicação
+  de ilegível) e alerta de idade obsoleto calculado pelo backend.
+- Reutilizar exclusivamente endpoints existentes (sem novos endpoints no backend).
+- Não recalcular dados no Flutter e não enviar/manipular valores financeiros locais.
+- Tratar falhas de leitura de forma segura com opção de tentar novamente.
+- Garantir 100% de cobertura de testes automatizados e zero regressões.
+
+================================================================================
+
+2. ANÁLISE PRÉVIA E REGRAS INVIOLÁVEIS
+================================================================================
+
+2.1. Regras de Negócio e Segurança:
+- Restrição de Acesso: resumo completo só é renderizado quando status == FINALIZADA.
+  Para outros status, a tela bloqueia a visualização com aviso claro.
+- Autoridade de Dados: dados dos pneus e idades vêm do backend FastAPI
+  (/api/v1/collections/{id}/conferencia/pneus). O Flutter não calcula idades nem
+  valores financeiros localmente.
+- Natureza Read-Only: tela estritamente de leitura, sem geração de novas
+  operações no Outbox.
+- Tratamento de Falhas: suporte a atualização manual (ícone na AppBar) e tela de
+  erro com botão "Tentar novamente" em caso de indisponibilidade de conexão.
+- Zero Dependências Extras: sem Firestore e sem pacotes desnecessários.
+
+================================================================================
+
+3. ARQUIVOS ALTERADOS / CRIADOS
+================================================================================
+
+3.1. lib/prestador/tela_prestador_resumo_coleta.dart (CRIADO)
+-------------------------------------------------------------
+- Tela StatefulWidget que carrega a lista de pneus via ApiService.listarPneusConferencia.
+- Bloqueio imediato se status != FINALIZADA.
+- Estados visuais: carregamento (CircularProgressIndicator), erro com botão de retry,
+  lista vazia e exibição consolidada.
+- Exibição de cards de pneus com avatar colorido (vermelho para alerta_idade_obsoleto,
+  verde para normal), DOT, marca, medida, número de fogo ou "Ilegível" e idade calculada.
+
+3.2. lib/prestador/tela_prestador_detalhe_coleta.dart (MODIFICADO)
+------------------------------------------------------------------
+- Adicionado getter `_podeVerResumo => _status == 'FINALIZADA'`.
+- Implementado método `_abrirResumo()` para navegar até TelaPrestadorResumoColeta.
+- Adicionado botão "Ver resumo da coleta" (blueGrey com ícone receipt_long),
+  visível exclusivamente quando a coleta estiver em status FINALIZADA.
+
+3.3. test/tela_prestador_resumo_coleta_test.dart (CRIADO)
+---------------------------------------------------------
+- 6 novos testes automatizados:
+  1. Renderização completa dos dados da coleta finalizada e lista de pneus.
+  2. Tratamento para lista vazia de pneus.
+  3. Bloqueio de acesso para status diferente de FINALIZADA.
+  4. Tratamento de erro de rede/leitura com retry bem-sucedido.
+  5. Recarregamento manual via botão atualizar na AppBar.
+  6. Navegação integrada a partir de TelaPrestadorDetalheColeta.
+
+================================================================================
+
+4. RESULTADOS DE TESTES E QUALIDADE
+================================================================================
+
+4.1. Análise Estática:
+- Comando: `flutter analyze`
+- Resultado: No issues found! (0 warnings, 0 errors, 0 lints)
+
+4.2. Execução dos Testes:
+- Comando: `flutter test`
+- Resultado: 163 / 163 testes passando (100% de sucesso).
+
+4.3. Distribuição de Testes no Flutter:
+- Sessão, Autenticação, Armazenamento Seguro, Logout: 25 testes
+- Outbox, Store, Classificação de Erros HTTP, Sincronização: 46 testes
+- Fluxo do Cliente (Criação offline, Minhas Coletas): 21 testes
+- Fluxo do Prestador (Pendentes, Aceite Concorrente, Minhas Coletas, Detalhes,
+  Conferência individual, Conclusão, Finalização e Resumo Finalizado): 71 testes
+- Total: 163 testes passando.
+
+================================================================================
+
+5. ESTADO GERAL DO PROJETO (ONDE PARAMOS)
+================================================================================
+
+5.1. Backend FastAPI (backend/):
+- Banco relacional PostgreSQL 15+ conteinerizado via Docker.
+- Autenticação JWT + Argon2id com RBAC (CLIENTE, PRESTADOR, ADMINISTRADOR).
+- Ciclo de estados da Coleta completo:
+  SOLICITADA -> ACEITA -> EM_DESLOCAMENTO -> EM_CONFERENCIA -> CARREGADA -> FINALIZADA.
+- Bloqueio de duplicidade de número de fogo na mesma coleta (permitido em coletas diferentes).
+- Alerta visual de DOT >= 7 anos sem violar regra fundamental (DOT nunca é unique).
+- Fechamento financeiro com snapshots imutáveis e lançamentos desacoplados cliente/prestador.
+- 92+ testes automatizados no backend.
+
+5.2. Frontend Flutter (meu_app_coleta_pneus/):
+- Autenticação e sessão segura com storage criptografado.
+- Outbox offline-first com retry seguro e idempotência UUIDv4 (X-Idempotency-Key).
+- Perfil CLIENTE:
+  * Criar coleta (offline-first).
+  * Listar minhas coletas e acompanhar status.
+- Perfil PRESTADOR:
+  * Listar coletas disponíveis e aceitar coletas com controle de concorrência.
+  * Listar minhas coletas atribuídas.
+  * Tela de detalhe com transições (ACEITA -> EM_DESLOCAMENTO -> EM_CONFERENCIA).
+  * Tela de conferência com registro individual de pneus (DOT, marca, medida, fogo/ilegível).
+  * Conclusão da conferência via Outbox (EM_CONFERENCIA -> CARREGADA).
+  * Finalização da coleta via Outbox (CARREGADA -> FINALIZADA).
+  * Tela de resumo/comprovante consolidado da coleta finalizada (somente leitura).
+
+================================================================================
+
+6. DIRETRIZES E PRÓXIMAS ETAPAS RECOMENDADAS
+================================================================================
+
+6.1. Próximas Missões Sugeridas:
+- Missão 33: Resumo / Comprovante da Coleta Finalizada para o CLIENTE
+  * Permitir ao cliente visualizar na tela de detalhe/minhas coletas o resumo
+    dos pneus conferidos/coletados da sua coleta finalizada.
+  * Respeitar o isolamento de dados (o cliente só acessa suas próprias coletas).
+- Missões Subsequentes:
+  * Fluxo de Contestação pelo Cliente (FINALIZADA -> CONTESTADA com motivo/foto).
+  * Painel e telas da Dashboard Administrativa no Flutter (leitura de coletas,
+    regras de preço e logs de auditoria).
+
+6.2. Cuidados Invioláveis para Próximos Agentes:
+- Backend permanece a única fonte de verdade e integridade de dados.
+- Não introduzir dependências desnecessárias.
+- Tipagem estrita no Dart e Pydantic v2 no FastAPI.
+- Manter o padrão de cobertura de testes automatizados com mocks determinísticos.
+
+================================================================================
+FIM DO RELATÓRIO 43
+================================================================================

@@ -210,7 +210,7 @@ void main() {
       expect(find.text('1 pneu(s) agendado(s) para envio.'), findsOneWidget);
     });
 
-    testWidgets('concluir conferencia com sucesso', (tester) async {
+    testWidgets('concluir conferencia com sucesso e agenda no outbox', (tester) async {
       final api = _apiCom(
         escrita: (_, __, ___) async =>
             RespostaHttp(200, jsonEncode(_itensVaziosResponse)),
@@ -234,9 +234,22 @@ void main() {
       await tester.pump(const Duration(milliseconds: 300));
 
       expect(find.text('Conferência concluída!'), findsOneWidget);
+      final fila = await outbox.pendentes();
+      expect(fila.length, 1);
+      expect(fila.first.caminho,
+          '/api/v1/collections/aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee/conferencia/concluir');
+      expect(fila.first.corpo, {
+        'quantidade_conferida': 1,
+        'quantidade_coletada': 1,
+      });
+
+      // Sincroniza e confirma que foi transmitida com sucesso
+      final sincronizadas = await outbox.sincronizarPendentes();
+      expect(sincronizadas, 1);
+      expect(await outbox.pendentes(), isEmpty);
     });
 
-    testWidgets('concluir sem pneus mostra aviso', (tester) async {
+    testWidgets('concluir sem pneus é bloqueado e não agenda no outbox', (tester) async {
       final api = _apiCom(
         escrita: (_, __, ___) async =>
             RespostaHttp(200, jsonEncode(_itensVaziosResponse)),
@@ -252,6 +265,80 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text('Registre pelo menos 1 pneu.'), findsOneWidget);
+      expect(await outbox.pendentes(), isEmpty);
+    });
+
+    testWidgets('concluir bloqueado se status não for EM_CONFERENCIA', (tester) async {
+      final api = _apiCom(
+        escrita: (_, __, ___) async =>
+            RespostaHttp(200, jsonEncode(_itensVaziosResponse)),
+      );
+      final outbox = _outboxCom();
+      await tester.pumpWidget(_envolver(
+        TelaPrestadorConferencia(
+          api: api,
+          outbox: outbox,
+          coleta: _coletaJson(status: 'ACEITA'),
+        ),
+      ));
+      await tester.pumpAndSettle();
+
+      await tester.enterText(find.widgetWithText(TextFormField, 'DOT (WWYY)'), '2324');
+      await tester.enterText(find.widgetWithText(TextFormField, 'Marca'), 'Michelin');
+      await tester.enterText(find.widgetWithText(TextFormField, 'Medida'), '275/80R22.5');
+      await tester.tap(find.text('Adicionar à lista'));
+      await tester.pumpAndSettle();
+
+      await tester.ensureVisible(find.text('Concluir conferência'));
+      await tester.tap(find.text('Concluir conferência'));
+      await tester.pumpAndSettle();
+
+      expect(
+        find.text('Conferência só pode ser concluída com status EM_CONFERENCIA.'),
+        findsOneWidget,
+      );
+      expect(await outbox.pendentes(), isEmpty);
+    });
+
+    testWidgets('conclusão offline preserva operação pendente e idempotência', (tester) async {
+      final api = _apiCom(
+        escrita: (_, __, ___) async =>
+            RespostaHttp(200, jsonEncode(_itensVaziosResponse)),
+      );
+      // Sem transporte de envio ou falha de rede -> permanece pendente no Outbox
+      final outbox = _outboxCom(enviar: (_, __, ___) async => throw Exception('Sem conexão'));
+      await tester.pumpWidget(_envolver(
+        TelaPrestadorConferencia(api: api, outbox: outbox, coleta: _coletaJson()),
+      ));
+      await tester.pumpAndSettle();
+
+      await tester.enterText(find.widgetWithText(TextFormField, 'DOT (WWYY)'), '2324');
+      await tester.enterText(find.widgetWithText(TextFormField, 'Marca'), 'Michelin');
+      await tester.enterText(find.widgetWithText(TextFormField, 'Medida'), '275/80R22.5');
+      await tester.tap(find.text('Adicionar à lista'));
+      await tester.pumpAndSettle();
+
+      await tester.ensureVisible(find.text('Concluir conferência'));
+      await tester.tap(find.text('Concluir conferência'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+
+      expect(find.text('Conferência concluída!'), findsOneWidget);
+
+      final fila = await outbox.pendentes();
+      expect(fila.length, 1);
+      final op = fila.first;
+      expect(op.caminho, '/api/v1/collections/aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee/conferencia/concluir');
+      expect(op.corpo, {
+        'quantidade_conferida': 1,
+        'quantidade_coletada': 1,
+      });
+      // Verifica formato UUIDv4 da chave de idempotência
+      final padraoUuidV4 = RegExp(
+        r'^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+        caseSensitive: false,
+      );
+      expect(padraoUuidV4.hasMatch(op.id), isTrue);
     });
   });
 }

@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../core/api/api_service.dart';
 import '../core/outbox/outbox_service.dart';
 import 'tela_prestador_conferencia.dart';
+import 'tela_prestador_resumo_coleta.dart';
 
 /// Tela de detalhe de uma coleta do Prestador.
 ///
@@ -36,11 +37,21 @@ class _TelaPrestadorDetalheColetaState
     _coleta = widget.coleta;
   }
 
+  @override
+  void didUpdateWidget(TelaPrestadorDetalheColeta oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.coleta != widget.coleta) {
+      _coleta = widget.coleta;
+    }
+  }
+
   String get _status => _coleta['status'] as String? ?? '';
 
   bool get _podeIniciarDeslocamento => _status == 'ACEITA';
   bool get _podeIniciarConferencia => _status == 'EM_DESLOCAMENTO';
   bool get _podeAbrirConferencia => _status == 'EM_CONFERENCIA';
+  bool get _podeFinalizar => _status == 'CARREGADA';
+  bool get _podeVerResumo => _status == 'FINALIZADA';
 
   Future<void> _iniciarDeslocamento() async {
     if (_processando) return;
@@ -94,8 +105,8 @@ class _TelaPrestadorDetalheColetaState
     }
   }
 
-  void _abrirConferencia() {
-    Navigator.push(
+  Future<void> _abrirConferencia() async {
+    final resultado = await Navigator.push<bool>(
       context,
       MaterialPageRoute(
         builder: (_) => TelaPrestadorConferencia(
@@ -105,6 +116,48 @@ class _TelaPrestadorDetalheColetaState
         ),
       ),
     );
+    if (resultado == true && mounted) {
+      setState(() {
+        _coleta = {..._coleta, 'status': 'CARREGADA'};
+      });
+    }
+  }
+
+  void _abrirResumo() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => TelaPrestadorResumoColeta(
+          api: widget.api,
+          coleta: _coleta,
+        ),
+      ),
+    );
+  }
+
+  Future<void> _finalizarColeta() async {
+    if (_processando || !_podeFinalizar) return;
+    setState(() => _processando = true);
+
+    try {
+      await widget.outbox.agendarFinalizacaoColeta(
+        coletaId: _coleta['id'] as String,
+      );
+      if (!mounted) return;
+      setState(() {
+        _coleta = {..._coleta, 'status': 'FINALIZADA'};
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Coleta finalizada com sucesso!')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Erro ao agendar finalização.')),
+      );
+    } finally {
+      if (mounted) setState(() => _processando = false);
+    }
   }
 
   String _mensagemErro(Exception e) {
@@ -265,6 +318,38 @@ class _TelaPrestadorDetalheColetaState
                   onPressed: _abrirConferencia,
                   icon: const Icon(Icons.playlist_add_check),
                   label: const Text('Abrir conferência'),
+                ),
+              ),
+            if (_podeFinalizar)
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton.icon(
+                  onPressed: _processando ? null : _finalizarColeta,
+                  icon: _processando
+                      ? const SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.check_circle),
+                  label: const Text('Finalizar coleta'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.green,
+                    foregroundColor: Colors.white,
+                  ),
+                ),
+              ),
+            if (_podeVerResumo)
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton.icon(
+                  onPressed: _abrirResumo,
+                  icon: const Icon(Icons.receipt_long),
+                  label: const Text('Ver resumo da coleta'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.blueGrey,
+                    foregroundColor: Colors.white,
+                  ),
                 ),
               ),
           ],

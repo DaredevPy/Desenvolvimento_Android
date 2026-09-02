@@ -137,6 +137,17 @@ class _TelaPrestadorConferenciaState extends State<TelaPrestadorConferencia> {
   }
 
   Future<void> _concluirConferencia() async {
+    if (widget.coleta['status'] != 'EM_CONFERENCIA') {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Conferência só pode ser concluída com status EM_CONFERENCIA.',
+          ),
+        ),
+      );
+      return;
+    }
+
     final qtdColetada = _pneusExistentes.length;
 
     if (qtdColetada == 0) {
@@ -157,7 +168,7 @@ class _TelaPrestadorConferenciaState extends State<TelaPrestadorConferencia> {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Conferência concluída!')),
       );
-      Navigator.pop(context);
+      Navigator.pop(context, true);
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(

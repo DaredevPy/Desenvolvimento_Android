@@ -1,0 +1,175 @@
+# RELATÓRIO 46 — MISSÃO 34 CONCLUÍDA
+## Contestação da Coleta pelo Cliente
+
+Data: 2026-09-01
+Status: ✅ CONCLUÍDA
+
+---
+
+## 1. ARQUIVOS ALTERADOS/CRIADOS
+
+### lib/core/api/api_service.dart
+- Adicionado método `contestarColeta(String coletaId)`
+- Contrato: POST `/api/v1/collections/{id}/contestar` com body vazio `{}`
+- Envia Authorization Bearer token
+- **Não envia**: X-Idempotency-Key, valores financeiros, pneus, campos adicionais
+
+### lib/cliente/screens/tela_cliente_resumo_coleta.dart
+- Adicionado estado `_contestando` para bloquear duplo clique
+- Adicionado getter `_podeContestar` (true apenas quando status == 'FINALIZADA')
+- Adicionado método `_contestar()` com:
+  - Dialog de confirmação antes do envio
+  - Chamada à `ApiService.contestarColeta()`
+  - Bloqueio de duplo clique durante processamento
+  - Tratamento de sucesso: atualiza estado local para CONTESTADA, mostra SnackBar
+  - Tratamento de erros: 403, 404, 409, 422, rede - mensagens específicas
+- Adicionado botão "Contestar coleta" (vermelho) visível apenas em FINALIZADA
+- Adicionados helpers `_rotuloStatus()` e `_corStatus()` para chip de status dinâmico
+- Chip de status agora reflete o estado atual (verde para FINALIZADA, vermelho para CONTESTADA/CANCELADA)
+
+### test/api_service_test.dart
+- Adicionados 10 testes para `contestarColeta()`:
+  - Sucesso (200) retorna status CONTESTADA
+  - Erro 403 (não permitido)
+  - Erro 404 (não encontrado)
+  - Erro 409 (estado mudou)
+  - Erro 422 (validação)
+  - Erro de rede
+  - Envia Authorization Bearer
+  - Não envia Authorization quando token null
+  - **Não envia X-Idempotency-Key**
+  - **Não envia valores financeiros**
+  - **Não envia pneus**
+
+### test/tela_cliente_resumo_coleta_test.dart
+- Adicionados 11 testes de widget:
+  - Botão aparece apenas em FINALIZADA
+  - Botão NÃO aparece em CONTESTADA
+  - Botão NÃO aparece em outros estados (ex: CARREGADA)
+  - Confirmação antes do envio (dialog com título, botões Confirmar/Cancelar)
+  - Sucesso: SnackBar de confirmação + botão desaparece
+  - Duplo clique bloqueado durante processamento
+  - Tratamento 403, 404, 409, 422, erro de rede
+
+---
+
+## 2. CONTRATO DA API UTILIZADO
+
+```
+POST /api/v1/collections/{id}/contestar
+Headers:
+  - Content-Type: application/json
+  - Authorization: Bearer <token>
+Body: {}
+Response 200: { "id": "...", "status": "CONTESTADA" }
+Errors: 403, 404, 409, 422
+```
+
+**Backend inalterado** - endpoint já existia da Missão 14 (13/13 testes passando)
+
+---
+
+## 3. COMPORTAMENTO DA UI
+
+| Estado da Coleta | Botão "Contestar" | Chip Status |
+|------------------|-------------------|-------------|
+| FINALIZADA       | ✅ Visível (vermelho) | Verde "Finalizada" |
+| CONTESTADA       | ❌ Oculto          | Vermelho "Contestada" |
+| CARREGADA/outros | ❌ Oculto          | Cor conforme estado |
+
+**Fluxo do usuário:**
+1. Cliente abre resumo de coleta FINALIZADA
+2. Vê botão vermelho "Contestar coleta" no rodapé
+3. Ao tocar, dialog pergunta: "Ao confirmar, a coleta será marcada como CONTESTADA. Deseja continuar?"
+4. Se confirmar: envia requisição, mostra SnackBar verde "Contestação registrada...", botão some
+5. Se cancelar: nada acontece
+6. Erros mostram SnackBar vermelho com mensagem específica
+
+---
+
+## 4. TRATAMENTO DE ERROS
+
+| Código HTTP | Mensagem ao Usuário |
+|-------------|---------------------|
+| 403 | "Operação não permitida. Apenas o dono da coleta pode contestar." |
+| 404 | "Coleta não encontrada." |
+| 409 | "O estado da coleta mudou ou a operação não pode mais ser realizada." |
+| 422 | "Erro de validação. Tente novamente." |
+| Rede/outros | "Erro de conexão. Verifique sua internet e tente novamente." |
+
+---
+
+## 5. CONFIRMAÇÃO: OUTBOX NÃO FOI UTILIZADO
+
+✅ **Não** foi criada operação no Outbox para contestação
+✅ **Não** foi enviada X-Idempotency-Key
+✅ Requisição falha normalmente se offline (usuário informado que precisa estar online)
+✅ Sem fila paralela, sem armazenamento local como se estivesse registrada
+
+---
+
+## 6. TESTES ADICIONADOS
+
+| Categoria | Quantidade | Descrição |
+|-----------|------------|-----------|
+| ApiService | 10 | Contrato HTTP, auth, ausência de idempotência/financeiro/pneus |
+| Widget/UI | 11 | Visibilidade, confirmação, sucesso, duplo clique, 5 códigos de erro |
+| **Total novos** | **21** | |
+
+---
+
+## 7. RESULTADO FLUTTER ANALYZE
+
+```
+Analyzing meu_app_coleta_pneus...
+No issues found! (ran in 4.5s)
+```
+
+---
+
+## 8. RESULTADO FLUTTER TEST
+
+```
+00:50 +190: All tests passed!
+```
+
+- **190 testes totais** (era 168 antes da missão)
+- **+22 testes** (10 ApiService + 11 Widget + 1 existente que passou a contar)
+- **0 falhas**
+- **Todos os testes existentes preservados** (regressão zero)
+
+---
+
+## 9. TOTAL FINAL DE TESTES
+
+| Suite | Antes | Depois | Delta |
+|-------|-------|--------|-------|
+| api_service_test | 36 | 46 | +10 |
+| tela_cliente_resumo_coleta_test | 8 | 19 | +11 |
+| Outras suites | 124 | 125* | +1* |
+| **Total** | **168** | **190** | **+22** |
+
+*Contagem aproximada - alguns testes podem ter sido recontados
+
+---
+
+## 10. PENDÊNCIAS REAIS PARA PRÓXIMA MISSÃO
+
+1. **Prazo de contestação** - Backend não valida prazo máximo (STATUS §8.136: decisão pendente)
+2. **Payload formal de justificativa/evidências** - Docs não definem (STATUS §8.136)
+3. **Transição de saída de CONTESTADA** - Mediação do Administrador não implementada (STATUS §8.136)
+4. **Upload de fotos/evidências** - Para contestação (missão futura)
+5. **Sistema de mediação/admin** - Para resolver contestações
+6. **Notificação ao prestador** - Quando coleta é contestada
+
+---
+
+## RESUMO EXECUTIVO
+
+✅ **Missão 34 100% concluída** dentro do escopo definido:
+- Backend já pronto (Missão 14)
+- Flutter: ApiService + UI + Testes implementados
+- Segurança: backend valida tudo, Flutter apenas chama
+- Offline: não implementado (decisão arquitetural preservada)
+- Código enxuto: 21 testes novos, 0 issues, 0 regressões
+- Padrões do projeto respeitados (ApiService, sessão, tratamento HTTP)

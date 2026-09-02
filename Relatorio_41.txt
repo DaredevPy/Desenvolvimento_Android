@@ -1,0 +1,150 @@
+================================================================================
+RELATÓRIO 41 — MISSÃO 30: FINALIZAÇÃO DA CONFERÊNCIA DO PRESTADOR
+================================================================================
+Data: 2026-09-01
+Status: CONCLUÍDA
+================================================================================
+
+1. CONTEXTO E OBJETIVO
+===============================================================================
+
+Partida:
+- Missão 29 concluída com sucesso.
+- Flutter com 152/152 testes passando e 0 issues no flutter analyze.
+- Backend FastAPI/PostgreSQL com ciclo de conferência e regras de negócio estáveis.
+- OutboxService já continha agendarConclusaoConferencia().
+
+Objetivo da Missão 30:
+- Fechar o fluxo do Prestador na conferência após o registro individual dos pneus.
+- Garantir que a conferência só possa ser concluída com status EM_CONFERENCIA.
+- Bloquear conclusão sem pneus registrados.
+- Utilizar exclusivamente OutboxService para envio/agendamento offline-first.
+- Preservar idempotência (X-Idempotency-Key UUIDv4) e sincronização automática.
+- Manter o backend como autoridade absoluta para validações.
+- Garantir 100% de cobertura com testes e zero regressões.
+
+================================================================================
+
+2. ANÁLISE PRÉVIA E REGRAS DE ARQUITETURA
+================================================================================
+
+2.1. Regras de Negócio e Segurança:
+- Status obrigatório: a conferência só pode ser concluída no estado EM_CONFERENCIA.
+- Quantidade mínima: a conferência exige pelo menos 1 pneu registrado.
+- Quantidades independentes: quantidade conferida e quantidade coletada enviadas
+  ao backend (/api/v1/collections/{id}/conferencia/concluir).
+- Idempotência: chave UUIDv4 gerada no cliente e enviada no cabeçalho
+  X-Idempotency-Key para prevenir duplicações de rede.
+- Resiliência offline: operação gravada primeiro no Outbox local
+  (StatusOperacaoOutbox.pendente); se houver conexão, sincroniza imediatamente;
+  se não houver, permanece segura na fila para retry automático.
+- Não uso de Firestore nem introdução de dependências externas desnecessárias.
+
+================================================================================
+
+3. ARQUIVOS ALTERADOS / CRIADOS
+================================================================================
+
+3.1. lib/prestador/tela_prestador_conferencia.dart (MODIFICADO)
+----------------------------------------------------------------
+- Adicionada validação de status: `if (widget.coleta['status'] != 'EM_CONFERENCIA')`
+  bloqueia a conclusão e exibe feedback via SnackBar caso a coleta não esteja
+  no estado correto.
+- Mantida validação de quantidade: bloqueia caso nenhum pneu tenha sido adicionado.
+- Chamada direta a `widget.outbox.agendarConclusaoConferencia()`.
+- Feedback ao usuário via SnackBar ("Conferência concluída!") e encerramento
+  da tela com `Navigator.pop(context)`.
+
+3.2. test/tela_prestador_conferencia_test.dart (MODIFICADO)
+----------------------------------------------------------------
+- Atualizado e expandido para 12 testes automatizados cobrindo todos os
+  requisitos da missão:
+  1. Conclusão válida agenda operação no Outbox e sincroniza com sucesso.
+  2. Conclusão sem pneus é bloqueada e não enfileira operação no Outbox.
+  3. Conclusão bloqueada se status for diferente de EM_CONFERENCIA (ex: ACEITA).
+  4. Conclusão offline mantém operação pendente no Outbox com chave UUIDv4 válida.
+
+================================================================================
+
+4. TESTES E QUALIDADE
+================================================================================
+
+4.1. Análise Estática:
+- Comando: `flutter analyze`
+- Resultado: No issues found! (0 warnings, 0 errors, 0 lints)
+
+4.2. Execução dos Testes:
+- Comando: `flutter test`
+- Resultado: 154 / 154 testes passando (100% de sucesso).
+
+4.3. Detalhamento dos Testes da Tela de Conferência (12 testes):
+  1. exibe carregando e depois itens declarados                          | OK
+  2. lista vazia mostra mensagem                                         | OK
+  3. erro de rede mostra itens vazios e formulario                       | OK
+  4. formulario exibe campos obrigatorios                                | OK
+  5. adicionar pneu a lista local                                        | OK
+  6. validacao DOT rejeita valor invalido                                | OK
+  7. botao ilegivel desabilita campo numero fogo                         | OK
+  8. registrar pneus agendado no outbox                                  | OK
+  9. concluir conferencia com sucesso e agenda no outbox                 | OK
+  10. concluir sem pneus é bloqueado e não agenda no outbox              | OK
+  11. concluir bloqueado se status não for EM_CONFERENCIA                | OK
+  12. conclusão offline preserva operação pendente e idempotência        | OK
+
+================================================================================
+
+5. ESTADO ATUAL DO SISTEMA (ONDE PARAMOS)
+================================================================================
+
+5.1. Backend FastAPI (backend/):
+- Banco PostgreSQL com modelos e migrations de domínio, coletas, pneus, financeiro,
+  idempotência e auditoria.
+- Autenticação JWT + Argon2id com RBAC (CLIENTE, PRESTADOR, ADMINISTRADOR).
+- Ciclo de estados da coleta: SOLICITADA -> ACEITA -> EM_DESLOCAMENTO ->
+  EM_CONFERENCIA -> CARREGADA -> FINALIZADA.
+- Fechamento financeiro em rota única (/finalizar) com snapshot imutável e
+  lançamentos de crédito/débito desacoplados.
+- Regra crítica preservada: DOT nunca é chave primária ou única.
+
+5.2. Frontend Flutter (meu_app_coleta_pneus/):
+- Sessão & Segurança: Login, logout seguro, persistência de token com flutter_secure_storage.
+- Outbox Offline: Fila local persistente (OutboxStore), classificação de erros HTTP
+  (definitivos vs transitórios), retry seguro com X-Idempotency-Key (UUIDv4),
+  sincronização automática em retornos e reconexões de rede.
+- Perfil Cliente:
+  * Criar Coleta (offline-first com Outbox).
+  * Minhas Coletas (leitura via ApiService).
+- Perfil Prestador:
+  * Coletas Disponíveis (listagem e aceite com controle de concorrência).
+  * Minhas Coletas (listagem com status e detalhes).
+  * Detalhe da Coleta (transições ACEITA -> EM_DESLOCAMENTO -> EM_CONFERENCIA).
+  * Conferência da Coleta:
+    - Carregamento de itens declarados.
+    - Registro individual de pneus (DOT, marca, medida, número de fogo/ilegível).
+    - Agendamento de registro de pneus via Outbox.
+    - Conclusão da conferência via Outbox (transição para CARREGADA no backend).
+
+================================================================================
+
+6. DIRETRIZES E PRÓXIMAS ETAPAS RECOMENDADAS
+================================================================================
+
+6.1. Próxima Etapa Natural (Missão 31):
+- FLUXO DO PRESTADOR: FINALIZAÇÃO DA COLETA (CARREGADA -> FINALIZADA).
+  * Permitir ao prestador finalizar a coleta quando o status for CARREGADA.
+  * Utilizar exclusivamente OutboxService.agendarFinalizacaoColeta() (corpo vazio).
+  * O backend é a autoridade única que calcula valores financeiros a partir das
+    regras de preço ativas e pneus coletados. O Flutter JAMAIS envia valores em dinheiro.
+  * Exibir confirmação e navegar de volta/atualizar status na lista do prestador.
+  * Adicionar testes unitários/widgets cobrindo agendamento, bloqueio por status,
+    resiliência offline e idempotência.
+
+6.2. Cuidados e Regras Invioláveis para Próximas Implementações:
+- Nunca enviar valores monetários do cliente Flutter para o backend.
+- Não introduzir dependências ou serviços sem necessidade arquitetural estrita.
+- Preservar tipagem estrita no Dart (sound null safety) e Pydantic v2 no FastAPI.
+- Manter o padrão de testes automatizados para cada nova tela ou fluxo de estado.
+
+================================================================================
+FIM DO RELATÓRIO 41
+================================================================================

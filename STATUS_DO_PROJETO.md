@@ -65,9 +65,16 @@ Aplicação 100% conteinerizada via Docker.
 | 23 | Política de erros HTTP do Outbox (classificação definitivo/transitório + 71/71 testes OK) |
 | 24 | Cliente HTTP de leitura (ApiService + GET coletas/disponíveis + 82/82 testes OK) |
 | 25 | Fluxo do Cliente conectado ao Backend (TelaClienteCriarColeta + TelaClienteMinhasColetas + 92/92 testes OK) |
+| 26 | Listagem de Coletas Disponíveis no Prestador (TelaPrestadorListarPendentes + 104/104 testes OK) |
+| 27 | Aceite Concorrente de Coletas no Prestador (POST /aceitar + 115/115 testes OK) |
+| 28 | Fluxo do Prestador: Minhas Coletas e Detalhes (TelaPrestadorMinhasColetas + TelaPrestadorDetalheColeta + 142/142 testes OK) |
+| 29 | Fluxo do Prestador: Registro Individual dos Pneus (TelaPrestadorConferencia + 152/152 testes OK) |
+| 30 | Finalização da Conferência do Prestador (Conclusão via Outbox + 154/154 testes OK) |
+| 31 | Finalização da Coleta pelo Prestador (CARREGADA → FINALIZADA via Outbox + 157/157 testes OK) |
+| 32 | Resumo da Coleta Finalizada no Flutter (TelaPrestadorResumoColeta + 163/163 testes OK) |
 
 Relatórios históricos: `Relatorio.txt`, `Relatorio_2.txt` a `Relatorio_6.txt`;
-relatórios de missão em `Relatorio_10.txt` a `Relatorio_35.txt`;
+relatórios de missão em `Relatorio_10.txt` a `Relatorio_43.txt`;
 relatório geral em `Relatorio_26.txt`.
 
 ## 5. Missão Atual
@@ -76,7 +83,8 @@ Nenhuma missão em execução.
 
 ## 6. Próximas Missões
 
-- Missão 26 — a ser definida (nenhuma funcionalidade iniciada)
+- Missão 33 — Resumo / Comprovante da Coleta Finalizada para o CLIENTE
+
 
 ## 6.1. Nota sobre relatórios
 

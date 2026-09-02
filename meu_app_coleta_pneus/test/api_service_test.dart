@@ -386,4 +386,141 @@ void main() {
       await servico.avancarStatus('x', 'EM_DESLOCAMENTO');
     });
   });
+
+  group('ApiService - contestarColeta', () {
+    test('sucesso (200) retorna coleta contestada', () async {
+      final servico = servicoCom(
+        (caminho, cabecalhos) async => RespostaHttp(200, '[]'),
+        enviarEscrita: (caminho, cabecalhos, corpo) async {
+          expect(caminho, '/api/v1/collections/11111111-2222-4333-8444-555555555555/contestar');
+          expect(corpo, '{}');
+          return RespostaHttp(200, jsonEncode({
+            'id': '11111111-2222-4333-8444-555555555555',
+            'status': 'CONTESTADA',
+          }));
+        },
+      );
+
+      final resultado = await servico.contestarColeta('11111111-2222-4333-8444-555555555555');
+
+      expect(resultado['id'], '11111111-2222-4333-8444-555555555555');
+      expect(resultado['status'], 'CONTESTADA');
+    });
+
+    test('403 lança exceção (não permitido)', () async {
+      final servico = servicoCom(
+        (caminho, cabecalhos) async => RespostaHttp(200, '[]'),
+        enviarEscrita: (caminho, cabecalhos, corpo) async =>
+            RespostaHttp(403, '{"detail":"Acesso negado."}'),
+      );
+
+      expect(() => servico.contestarColeta('11111111-2222-4333-8444-555555555555'), throwsA(isA<Exception>()));
+    });
+
+    test('404 lança exceção (coleta não encontrada)', () async {
+      final servico = servicoCom(
+        (caminho, cabecalhos) async => RespostaHttp(200, '[]'),
+        enviarEscrita: (caminho, cabecalhos, corpo) async =>
+            RespostaHttp(404, '{"detail":"Recurso não encontrado."}'),
+      );
+
+      expect(() => servico.contestarColeta('nonexistent-id'), throwsA(isA<Exception>()));
+    });
+
+    test('409 lança exceção (estado mudou)', () async {
+      final servico = servicoCom(
+        (caminho, cabecalhos) async => RespostaHttp(200, '[]'),
+        enviarEscrita: (caminho, cabecalhos, corpo) async =>
+            RespostaHttp(409, '{"detail":"Transição inválida a partir de CARREGADA."}'),
+      );
+
+      expect(() => servico.contestarColeta('11111111-2222-4333-8444-555555555555'), throwsA(isA<Exception>()));
+    });
+
+    test('422 lança exceção (validação)', () async {
+      final servico = servicoCom(
+        (caminho, cabecalhos) async => RespostaHttp(200, '[]'),
+        enviarEscrita: (caminho, cabecalhos, corpo) async =>
+            RespostaHttp(422, '{"detail":"Erro de validação."}'),
+      );
+
+      expect(() => servico.contestarColeta('11111111-2222-4333-8444-555555555555'), throwsA(isA<Exception>()));
+    });
+
+    test('erro de rede lança exceção', () async {
+      final servico = servicoCom(
+        (caminho, cabecalhos) async => RespostaHttp(200, '[]'),
+        enviarEscrita: (caminho, cabecalhos, corpo) async =>
+            throw Exception('sem conexao'),
+      );
+
+      expect(() => servico.contestarColeta('11111111-2222-4333-8444-555555555555'), throwsA(isA<Exception>()));
+    });
+
+    test('envia Authorization Bearer quando token disponível', () async {
+      final servico = servicoCom(
+        (caminho, cabecalhos) async => RespostaHttp(200, '[]'),
+        enviarEscrita: (caminho, cabecalhos, corpo) async {
+          expect(cabecalhos['Authorization'], 'Bearer jwt.teste');
+          return RespostaHttp(200, jsonEncode({'id': 'x', 'status': 'CONTESTADA'}));
+        },
+        obterToken: () => 'jwt.teste',
+      );
+
+      await servico.contestarColeta('x');
+    });
+
+    test('não envia Authorization quando token é null', () async {
+      final servico = servicoCom(
+        (caminho, cabecalhos) async => RespostaHttp(200, '[]'),
+        enviarEscrita: (caminho, cabecalhos, corpo) async {
+          expect(cabecalhos.containsKey('Authorization'), isFalse);
+          return RespostaHttp(200, jsonEncode({'id': 'x', 'status': 'CONTESTADA'}));
+        },
+        obterToken: () => null,
+      );
+
+      await servico.contestarColeta('x');
+    });
+
+    test('não envia X-Idempotency-Key', () async {
+      final servico = servicoCom(
+        (caminho, cabecalhos) async => RespostaHttp(200, '[]'),
+        enviarEscrita: (caminho, cabecalhos, corpo) async {
+          expect(cabecalhos.containsKey('X-Idempotency-Key'), isFalse);
+          return RespostaHttp(200, jsonEncode({'id': 'x', 'status': 'CONTESTADA'}));
+        },
+      );
+
+      await servico.contestarColeta('x');
+    });
+
+    test('não envia valores financeiros', () async {
+      final servico = servicoCom(
+        (caminho, cabecalhos) async => RespostaHttp(200, '[]'),
+        enviarEscrita: (caminho, cabecalhos, corpo) async {
+          final json = jsonDecode(corpo) as Map<String, dynamic>;
+          expect(json.containsKey('valor'), isFalse);
+          expect(json.containsKey('snapshot_valor_cliente'), isFalse);
+          expect(json.containsKey('snapshot_valor_prestador'), isFalse);
+          return RespostaHttp(200, jsonEncode({'id': 'x', 'status': 'CONTESTADA'}));
+        },
+      );
+
+      await servico.contestarColeta('x');
+    });
+
+    test('não envia pneus', () async {
+      final servico = servicoCom(
+        (caminho, cabecalhos) async => RespostaHttp(200, '[]'),
+        enviarEscrita: (caminho, cabecalhos, corpo) async {
+          final json = jsonDecode(corpo) as Map<String, dynamic>;
+          expect(json.containsKey('pneus'), isFalse);
+          return RespostaHttp(200, jsonEncode({'id': 'x', 'status': 'CONTESTADA'}));
+        },
+      );
+
+      await servico.contestarColeta('x');
+    });
+  });
 }

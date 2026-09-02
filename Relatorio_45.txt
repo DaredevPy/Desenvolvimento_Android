@@ -1,0 +1,92 @@
+# RELATÓRIO 45 — DIAGNÓSTICO DE ENTRADA (HANDOFF)
+
+Data: 2026-09-01
+Agente: Assumindo continuidade do projeto Desenvolvimento_Android
+
+---
+
+## A. ESTADO REAL
+
+### Backend (FastAPI)
+- Rota `POST /api/v1/collections/{id}/contestar` **já existe e funciona** (implementada na Missão 14, em `backend/app/collections.py:744-783`)
+- Suporta: CLIENTE (dono) e ADMINISTRADOR (mediação); PRESTADOR recebe 403
+- Validações: autenticação, ownership (anti-enumeração), máquina de estados (apenas FINALIZADA→CONTESTADA), payload estrito vazio (`extra="forbid"`)
+- Concorrência: `SELECT FOR UPDATE` + `UPDATE` condicional por rowcount
+- Auditoria: `acao=CONTESTACAO_COLETA` com autor, IP, estado anterior/novo na mesma transação
+- **Não aceita** `X-Idempotency-Key` (decisão arquitetural documentada em STATUS §8.137)
+- Financeiro, pneus, DOT, número de fogo permanecem intactos (testes 13/14/15 confirmam)
+
+### Flutter
+- `TelaClienteResumoColeta` exibe apenas leitura de coleta FINALIZADA
+- **Não há** método `contestar` no `ApiService`
+- **Não há** botão/ação de contestação na UI do cliente
+- Status `CONTESTADA` já aparece no mapeamento de rótulos (`tela_cliente_minhas_coletas.dart:75`)
+
+---
+
+## B. O QUE ESTÁ FUNCIONANDO
+
+| Componente | Status |
+|------------|--------|
+| Backend `/contestar` | ✅ 13/13 testes passam |
+| Backend completo | ✅ 184/184 testes passam |
+| Flutter testes | ✅ 168/168 testes passam |
+| `flutter analyze` | ✅ 0 issues |
+| Autenticação/JWT/Argon2id | ✅ |
+| RBAC (3 perfis) | ✅ |
+| Outbox Pattern (offline-first) | ✅ 4 operações (criação, pneus, conclusão, finalização) |
+| Idempotência (X-Idempotency-Key UUIDv4) | ✅ backend + Flutter |
+| Máquina de estados da coleta | ✅ completa até FINALIZADA |
+| Financeiro (snapshots imutáveis) | ✅ |
+| Resumo coleta CLIENTE (Missão 33) | ✅ |
+
+---
+
+## C. O QUE ESTÁ INCOMPLETO
+
+1. **Flutter `ApiService`** — falta método `contestarColeta(String coletaId)` para chamar `POST /api/v1/collections/{id}/contestar` com corpo vazio `{}`
+2. **Flutter UI** — `TelaClienteResumoColeta` não tem botão/ação "Contestar" quando status = `FINALIZADA`
+3. **Testes Flutter** — não existem testes para o fluxo de contestação do cliente
+
+---
+
+## D. DIVERGÊNCIAS (Documentação × Código Real)
+
+| Documentação | Código Real | Nota |
+|--------------|-------------|------|
+| STATUS §6 "Próximas Missões: Missão 33" | STATUS §4 tabela mostra Missão 33 já concluída (163 testes) | STATUS_DO_PROJETO.md tem inconsistência na seção 6 vs seção 4 |
+| STATUS §8.136 "prazo máximo para contestar... não definidos nos docs" | Backend não valida prazo (correto: decisão pendente) | Alinhado — não é bug |
+| STATUS §8.137 "idempotência da contestação: /contestar não aceita X-Idempotency-Key" | Backend de fato não aceita (correto) | Alinhado — decisão arquitetural |
+
+---
+
+## E. SEGURANÇA
+
+**Riscos reais identificados:**
+- Nenhum secret/token/senha no código (verificado)
+- Backend valida ownership e RBAC corretamente
+- Auditoria no servidor (PostgreSQL) é fonte primária
+- Payload estrito `extra="forbid"` impede injeção de campos
+
+**Atenção:** O `contestar` não usa `X-Idempotency-Key` (design intencional). Se o app Flutter for offline e tentar contestar, a operação NÃO entrará no Outbox — o usuário precisará estar online. Isso está alinhado com a decisão do STATUS §8.137.
+
+---
+
+## F. PRÓXIMO PASSO — MISSÃO 34
+
+**A Missão 34 (Contestação pelo Cliente) ESTÁ PRONTA PARA COMEÇAR no Flutter.**
+
+O backend já implementa 100% do contrato necessário. O trabalho restante é **exclusivamente no Flutter**:
+1. Adicionar `contestarColeta()` no `ApiService`
+2. Adicionar botão "Contestar" em `TelaClienteResumoColeta` (visível apenas quando status = `FINALIZADA`)
+3. Tratar resposta 200 → atualizar status local para `CONTESTADA`
+4. Tratar erros 403/404/409/422 com mensagens adequadas
+5. Escrever testes unitários/widget
+
+---
+
+## G. RECOMENDAÇÃO
+
+**Executar Missão 34 agora.**
+
+Não há bloqueadores técnicos nem correções prévias necessárias. O backend está estável, testado e documentado. O Flutter precisa apenas da camada de chamada à API + UI + testes, seguindo os padrões já estabelecidos no projeto (`ApiService` + `OutboxService` NÃO usado aqui pois não há idempotência no endpoint).

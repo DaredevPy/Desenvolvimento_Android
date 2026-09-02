@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../core/api/api_service.dart';
 import '../../core/outbox/outbox_service.dart';
 import 'tela_cliente_criar_coleta.dart';
+import 'tela_cliente_resumo_coleta.dart';
 
 /// Tela que lista as coletas do Cliente autenticado.
 ///
@@ -44,6 +45,19 @@ class _TelaClienteMinhasColetasState extends State<TelaClienteMinhasColetas> {
       context,
       MaterialPageRoute(
         builder: (_) => TelaClienteCriarColeta(outbox: widget.outbox),
+      ),
+    );
+    _recarregar();
+  }
+
+  void _abrirDetalhe(Map<String, dynamic> coleta) async {
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => TelaClienteResumoColeta(
+          api: widget.api,
+          coleta: coleta,
+        ),
       ),
     );
     _recarregar();
@@ -140,6 +154,7 @@ class _TelaClienteMinhasColetasState extends State<TelaClienteMinhasColetas> {
                       '${itens.length} item(ns)',
                     ),
                     trailing: const Icon(Icons.chevron_right),
+                    onTap: () => _abrirDetalhe(c),
                   ),
                 );
               },

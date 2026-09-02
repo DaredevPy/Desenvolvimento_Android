@@ -3,10 +3,12 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:meu_app_coleta_pneus/core/api/api_service.dart';
+import 'package:meu_app_coleta_pneus/core/outbox/operacao_pendente.dart';
 import 'package:meu_app_coleta_pneus/core/outbox/outbox_service.dart';
 import 'package:meu_app_coleta_pneus/core/sessao/servico_sessao.dart';
 import 'package:meu_app_coleta_pneus/prestador/tela_prestador_minhas_coletas.dart';
 import 'package:meu_app_coleta_pneus/prestador/tela_prestador_detalhe_coleta.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 Map<String, dynamic> _coletaJson({
   String id = 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee',
@@ -38,13 +40,19 @@ ApiService _apiCom({
   );
 }
 
-OutboxService _outboxDummy() => OutboxService();
+OutboxService _outboxDummy({
+  Future<int> Function(String, Map<String, String>, String)? enviar,
+}) =>
+    OutboxService(enviar: enviar);
 
 Widget _envolver(Widget child) {
   return MaterialApp(home: child);
 }
 
 void main() {
+  setUp(() {
+    SharedPreferences.setMockInitialValues({});
+  });
   group('TelaPrestadorMinhasColetas', () {
     testWidgets('exibe carregando e depois lista de coletas', (tester) async {
       final api = _apiCom(
@@ -358,6 +366,91 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text('Erro de conexão. Tente novamente.'), findsOneWidget);
+    });
+
+    testWidgets('botão finalizar coleta aparece apenas para CARREGADA', (tester) async {
+      final api = _apiCom();
+      final outbox = _outboxDummy();
+
+      // Status CARREGADA: botão deve aparecer
+      final coletaCarregada = _coletaJson(status: 'CARREGADA');
+      await tester.pumpWidget(_envolver(
+        TelaPrestadorDetalheColeta(api: api, outbox: outbox, coleta: coletaCarregada),
+      ));
+      await tester.pumpAndSettle();
+      expect(find.text('Finalizar coleta'), findsOneWidget);
+
+      // Outros status: botão NÃO deve aparecer
+      for (final st in ['ACEITA', 'EM_DESLOCAMENTO', 'EM_CONFERENCIA', 'FINALIZADA']) {
+        await tester.pumpWidget(_envolver(
+          TelaPrestadorDetalheColeta(api: api, outbox: outbox, coleta: _coletaJson(status: st)),
+        ));
+        await tester.pumpAndSettle();
+        expect(find.text('Finalizar coleta'), findsNothing);
+      }
+    });
+
+    testWidgets('finalização válida agenda operação no Outbox com corpo vazio estrito e sem valores financeiros', (tester) async {
+      final api = _apiCom();
+      final outbox = _outboxDummy(enviar: (_, __, ___) async => 200);
+      final coleta = _coletaJson(status: 'CARREGADA');
+
+      await tester.pumpWidget(_envolver(
+        TelaPrestadorDetalheColeta(api: api, outbox: outbox, coleta: coleta),
+      ));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Finalizar coleta'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+
+      expect(find.text('Coleta finalizada com sucesso!'), findsOneWidget);
+      expect(find.text('Finalizada'), findsOneWidget);
+      expect(find.text('Finalizar coleta'), findsNothing);
+
+      final fila = await outbox.pendentes();
+      expect(fila.length, 1);
+      final op = fila.first;
+      expect(op.caminho, '/api/v1/collections/aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee/finalizar');
+      // Doc AGENTS §4.2 e §3: Flutter NUNCA envia valores financeiros, corpo é vazio estrito {}
+      expect(op.corpo, isEmpty);
+      expect(op.corpo, isA<Map<String, dynamic>>());
+
+      // Sincroniza e descarta
+      final sincronizadas = await outbox.sincronizarPendentes();
+      expect(sincronizadas, 1);
+      expect(await outbox.pendentes(), isEmpty);
+    });
+
+    testWidgets('operação offline de finalização permanece pendente no Outbox com UUIDv4 preservado', (tester) async {
+      final api = _apiCom();
+      final outbox = _outboxDummy(enviar: (_, __, ___) async => throw Exception('Sem rede'));
+      final coleta = _coletaJson(status: 'CARREGADA');
+
+      await tester.pumpWidget(_envolver(
+        TelaPrestadorDetalheColeta(api: api, outbox: outbox, coleta: coleta),
+      ));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Finalizar coleta'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+
+      expect(find.text('Coleta finalizada com sucesso!'), findsOneWidget);
+      expect(find.text('Finalizada'), findsOneWidget);
+
+      final fila = await outbox.pendentes();
+      expect(fila.length, 1);
+      final op = fila.first;
+      expect(op.caminho, '/api/v1/collections/aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee/finalizar');
+      expect(op.corpo, isEmpty);
+      expect(op.status, StatusOperacaoOutbox.pendente);
+
+      final padraoUuidV4 = RegExp(
+        r'^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+        caseSensitive: false,
+      );
+      expect(padraoUuidV4.hasMatch(op.id), isTrue);
     });
   });
 }
