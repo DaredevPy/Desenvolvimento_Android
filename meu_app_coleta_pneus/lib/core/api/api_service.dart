@@ -151,6 +151,22 @@ class ApiService {
     );
   }
 
+  /// Cancela uma coleta SOLICITADA (somente CLIENTE dono da coleta).
+  ///
+  /// Transição: SOLICITADA → CANCELADA.
+  /// Corpo vazio estrito: {}.
+  /// Não envia X-Idempotency-Key (decisão arquitetural - backend não tem idempotência para cancelamento).
+  /// Retorna mapa com {id, status}.
+  Future<Map<String, dynamic>> cancelarColeta(String coletaId) async {
+    final resposta = await _post(
+      '/api/v1/collections/$coletaId/cancelar',
+      '{}',
+    );
+    return Map<String, dynamic>.from(
+      jsonDecode(resposta.corpo) as Map,
+    );
+  }
+
   Future<RespostaHttp> _get(String caminho) async {
     final cabecalhos = <String, String>{
       'Content-Type': 'application/json',

@@ -533,6 +533,156 @@ class TestConferencia(unittest.TestCase):
             403,
         )
 
+    # --- Índice único parcial para Número de Fogo (Missão 36) ---
+
+    def test_19_multiplos_null_numero_fogo_mesma_coleta_permitido(self):
+        """
+        Múltiplos pneus com numero_fogo = NULL (ilegíveis) na mesma coleta
+        devem ser permitidos pelo índice único parcial.
+        """
+        coleta_id, cabecalhos = self.levar_ate_conferencia("conf-null-c@test.com", "conf-null-p@test.com")
+        self.client.post(f"/api/v1/collections/{coleta_id}/conferencia/iniciar", headers=cabecalhos)
+
+        # Primeiro pneu ilegível
+        r1 = self.client.post(
+            f"/api/v1/collections/{coleta_id}/conferencia/pneus",
+            json={"pneus": [payload_pneu(numero_fogo_ilegivel=True, observacoes="Ilegível 1", foto_pneu_url="https://foto1.jpg")]},
+            headers=cabecalhos,
+        )
+        self.assertEqual(r1.status_code, 201, r1.text)
+
+        # Segundo pneu ilegível na mesma coleta
+        r2 = self.client.post(
+            f"/api/v1/collections/{coleta_id}/conferencia/pneus",
+            json={"pneus": [payload_pneu(numero_fogo_ilegivel=True, observacoes="Ilegível 2", foto_pneu_url="https://foto2.jpg")]},
+            headers=cabecalhos,
+        )
+        self.assertEqual(r2.status_code, 201, r2.text)
+
+        pneus_db = self.pneus_no_banco(coleta_id)
+        self.assertEqual(len(pneus_db), 2)
+        self.assertTrue(all(p.numero_fogo is None for p in pneus_db))
+        self.assertTrue(all(p.numero_fogo_ilegivel for p in pneus_db))
+
+    def test_20_constraint_banco_direta_mesma_coleta_mesmo_numero_fogo_bloqueia(self):
+        """
+        Inserção direta no banco (bypass validação Python) com mesmo
+        collection_id + numero_fogo deve falhar no PostgreSQL.
+        """
+        coleta_id, cabecalhos = self.levar_ate_conferencia("conf-db-c@test.com", "conf-db-p@test.com")
+        self.client.post(f"/api/v1/collections/{coleta_id}/conferencia/iniciar", headers=cabecalhos)
+
+        # Insere primeiro pneu via API (Python validation passa)
+        r1 = self.client.post(
+            f"/api/v1/collections/{coleta_id}/conferencia/pneus",
+            json={"pneus": [payload_pneu(numero_fogo="ABC123")]},
+            headers=cabecalhos,
+        )
+        self.assertEqual(r1.status_code, 201, r1.text)
+
+        # Tenta inserir segundo pneu com mesmo numero_fogo DIRETAMENTE NO BANCO
+        # bypassando a validação Python
+        from backend.db import session as db_session
+        from backend.db.models import Tire
+        from sqlalchemy.exc import IntegrityError
+
+        with db_session.SessionLocal() as db:
+            pneu_duplicado = Tire(
+                collection_id=coleta_id,
+                numero_fogo="ABC123",
+                dot="2526",
+                semana_fabricacao=25,
+                ano_fabricacao=26,
+                idade_calculada_anos=0.5,
+                alerta_idade_obsoleto=False,
+                marca="Michelin",
+                medida="275/80R22.5",
+            )
+            db.add(pneu_duplicado)
+            try:
+                db.commit()
+                self.fail("Deveria ter levantado IntegrityError no banco")
+            except IntegrityError:
+                db.rollback()
+                # Esperado: banco bloqueia pela constraint única parcial
+
+        # Verifica que só existe 1 pneu no banco
+        pneus_db = self.pneus_no_banco(coleta_id)
+        self.assertEqual(len(pneus_db), 1)
+
+    def test_21_constraint_banco_direta_coletas_diferentes_mesmo_numero_fogo_permitido(self):
+        """
+        Inserção direta no banco: mesmo numero_fogo em coletas DIFERENTES
+        deve ser permitido (o índice é parcial por collection_id).
+        """
+        coleta_a, cabecalhos = self.levar_ate_conferencia("conf-db2a-c@test.com", "conf-db2-p@test.com")
+        self.client.post(f"/api/v1/collections/{coleta_a}/conferencia/iniciar", headers=cabecalhos)
+
+        coleta_b, _ = self.levar_ate_conferencia("conf-db2b-c@test.com", "conf-db2-p@test.com")
+        self.client.post(f"/api/v1/collections/{coleta_b}/conferencia/iniciar", headers=cabecalhos)
+
+        from backend.db import session as db_session
+        from backend.db.models import Tire
+
+        # Insere na coleta A via API
+        r1 = self.client.post(
+            f"/api/v1/collections/{coleta_a}/conferencia/pneus",
+            json={"pneus": [payload_pneu(numero_fogo="XYZ789")]},
+            headers=cabecalhos,
+        )
+        self.assertEqual(r1.status_code, 201, r1.text)
+
+        # Insere na coleta B DIRETAMENTE NO BANCO com mesmo numero_fogo
+        with db_session.SessionLocal() as db:
+            pneu_b = Tire(
+                collection_id=coleta_b,
+                numero_fogo="XYZ789",
+                dot="2526",
+                semana_fabricacao=25,
+                ano_fabricacao=26,
+                idade_calculada_anos=0.5,
+                alerta_idade_obsoleto=False,
+                marca="Pirelli",
+                medida="295/80R22.5",
+            )
+            db.add(pneu_b)
+            db.commit()  # Deve suceder
+
+        # Verifica que ambas coletas têm o pneu
+        pneus_a = self.pneus_no_banco(coleta_a)
+        pneus_b = self.pneus_no_banco(coleta_b)
+        self.assertEqual(len(pneus_a), 1)
+        self.assertEqual(len(pneus_b), 1)
+        self.assertEqual(pneus_a[0].numero_fogo, "XYZ789")
+        self.assertEqual(pneus_b[0].numero_fogo, "XYZ789")
+
+    def test_22_dot_regressao_mesmo_dot_multiplas_coletas_permitido(self):
+        """
+        Regressão: DOT pode continuar se repetindo livremente em múltiplas coletas
+        e dentro da mesma coleta.
+        """
+        coleta_a, cabecalhos = self.levar_ate_conferencia("conf-dotreg-c1@test.com", "conf-dotreg-p@test.com")
+        self.client.post(f"/api/v1/collections/{coleta_a}/conferencia/iniciar", headers=cabecalhos)
+
+        coleta_b, _ = self.levar_ate_conferencia("conf-dotreg-c2@test.com", "conf-dotreg-p@test.com")
+        self.client.post(f"/api/v1/collections/{coleta_b}/conferencia/iniciar", headers=cabecalhos)
+
+        # Mesmo DOT nas duas coletas
+        for coleta in (coleta_a, coleta_b):
+            r = self.client.post(
+                f"/api/v1/collections/{coleta}/conferencia/pneus",
+                json={"pneus": [payload_pneu(dot="1234", numero_fogo=f"NF-{coleta[:8]}")]},
+                headers=cabecalhos,
+            )
+            self.assertEqual(r.status_code, 201, f"Falha na coleta {coleta}: {r.text}")
+
+        # Verifica no banco
+        with db_session.SessionLocal() as db:
+            from backend.db.models import Tire
+            from sqlalchemy import select
+            total = db.scalars(select(Tire).where(Tire.dot == "1234")).all()
+            self.assertEqual(len(total), 2)
+
 
 if __name__ == "__main__":
     unittest.main()

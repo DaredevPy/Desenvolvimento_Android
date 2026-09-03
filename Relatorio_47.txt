@@ -1,0 +1,220 @@
+# RELATÓRIO 47 — MISSÃO 35 CONCLUÍDA
+## Análise do Ciclo de Vida do Pneu e Número de Fogo
+
+Data: 2026-09-02
+Status: ✅ CONCLUÍDA (APENAS ANÁLISE — NENHUMA ALTERAÇÃO REALIZADA)
+
+---
+
+## 1. RESUMO EXECUTIVO
+
+A Missão 35 foi uma missão **exclusivamente de análise** para verificar se a arquitetura atual representa corretamente a realidade operacional do ciclo de vida do pneu e do Número de Fogo.
+
+**Conclusão principal:** O sistema **JÁ PERMITE** corretamente:
+- Mesmo Número de Fogo em coletas diferentes (histórico de recapagens)
+- Bloqueio de Número de Fogo duplicado **dentro da mesma coleta**
+- Repetição livre de DOT (sem UNIQUE global)
+- Cada ocorrência de recapagem = registro individual em `tires` com UUID próprio
+
+**Nenhuma alteração de código, banco, migration ou testes foi realizada.**
+
+---
+
+## 2. ESTADO ATUAL DO PROJETO (BASELINE)
+
+| Componente | Status |
+|------------|--------|
+| Flutter Tests | 190/190 passando |
+| Backend Tests | 184/184 passando |
+| `flutter analyze` | Sem issues |
+| Última missão funcional | Missão 34 — Contestação da Coleta pelo Cliente |
+| Arquitetura | Flutter/Dart + FastAPI/Python + PostgreSQL 15+ |
+
+---
+
+## 3. ANÁLISE DETALHADA — COMO ESTÁ HOJE
+
+### 3.1 Entidade `tires` (Registro Individual)
+- **PK:** `id` (UUIDv4) — identidade única do registro
+- **FK:** `collection_id` → `collections.id` (CASCADE, indexado)
+- **Número de Fogo:** `numero_fogo` VARCHAR(50), **nullable**, indexado, **NÃO UNIQUE**
+- **DOT:** `dot` VARCHAR(10), NOT NULL, indexado, **NÃO UNIQUE** (ADR 10)
+- **Outros:** semana_fabricacao, ano_fabricacao, idade_calculada_anos, alerta_idade_obsoleto, marca, medida, modelo, estado_conservacao, observacoes, foto_pneu_url, created_at
+
+### 3.2 Validação de Duplicidade (Backend — `collections.py:498-554`)
+```python
+# 1. Verifica duplicidade DENTRO do lote atual
+numeros_fogo = [p.numero_fogo for p in pneus if p.numero_fogo]
+if len(numeros_fogo) != len(set(numeros_fogo)):
+    raise HTTPException(409, "Número de fogo duplicado na mesma coleta.")
+
+# 2. Verifica contra pneus JÁ EXISTENTES na mesma coleta
+if numeros_fogo:
+    existentes = db.scalars(
+        select(Tire.numero_fogo).where(
+            Tire.collection_id == coleta_id, Tire.numero_fogo.in_(numeros_fogo)
+        )
+    ).all()
+    if existentes:
+        raise HTTPException(409, "Número de fogo duplicado na mesma coleta.")
+```
+
+### 3.3 Constraints de Banco
+- **NENHUM** `UNIQUE` global em `tires.numero_fogo`
+- **NENHUM** `UNIQUE` global em `tires.dot`
+- **NENHUM** `UNIQUE` composto `(collection_id, numero_fogo)`
+- Bloqueio é **apenas em lógica Python** (race condition possível)
+
+### 3.4 Testes Comprovando Comportamento Correto
+- `test_conferencia.py::test_09_mesmo_numero_fogo_em_coletas_diferentes_permitido` — **PASSA**: mesmo `numero_fogo` em Coleta A e Coleta B = 201 em ambas
+- `test_conferencia.py::test_08_numero_fogo_duplicado_na_mesma_coleta_bloqueado_definitivamente` — **PASSA**: duplicidade na mesma coleta = 409
+- `test_dot_repetition.py::test_dot_repetition_500_tires` — **PASSA**: 500 pneus com mesmo DOT = permitido
+
+---
+
+## 4. O QUE ESTÁ CORRETO (JÁ COMPATÍVEL COM A REALIDADE)
+
+| Regra | Onde |
+|-------|------|
+| DOT não é UNIQUE; repetição livre | `tire.py:16`, `test_dot_repetition.py`, ADR 10 |
+| 500 pneus com mesmo DOT na mesma coleta = permitido | `test_conferencia.py:test_06` |
+| Número de Fogo pode repetir entre coletas diferentes | `test_conferencia.py:test_09` |
+| Número de Fogo bloqueado duplicado na mesma coleta | `collections.py:517-527`, `test_08` |
+| Cada pneu tem UUID próprio | `tire.py:11`, `test_05` |
+| Idade calculada no backend | `collections.py:_calcular_idade_anos` |
+| Alerta ≥ 7 anos | `collections.py:37,538`, `tire.py:20` |
+| Número de Fogo ilegível exige foto+obs | `collections.py:505-516`, `test_10` |
+
+---
+
+## 5. PROBLEMAS IDENTIFICADOS (RISCOS)
+
+| # | Problema | Local | Impacto |
+|---|----------|-------|---------|
+| 1 | **Race condition**: validação só em Python, sem constraint de banco | `tire.py` (ausência de `UniqueConstraint`) | Dois requests concorrentes podem ambos passar o `select` e inserir duplicado |
+| 2 | `numero_fogo` nullable permite múltiplos `NULL` (ilegíveis) na mesma coleta | `tire.py:13`, `collections.py:517` | Comportamento atual: permitido. Verificar se é desejado |
+| 3 | `numero_serie` não validado para duplicidade | `tire.py:15`, `collections.py` (não verifica) | Número de série de fábrica também identifica fisicamente |
+
+---
+
+## 6. O QUE NÃO PRECISA SER ALTERADO (EVITAR MUDANÇAS DESNECESSÁRIAS)
+
+1. **DOT** — já correto
+2. **Estrutura `tires` com UUID próprio** — já correta (ocorrência = registro individual)
+3. **Histórico de coletas** — já funciona (mesmo `numero_fogo` em `collection_id` diferentes = ocorrências distintas)
+4. **Fluxo offline/Outbox** — já envia `X-Idempotency-Key` UUIDv4; backend deduplica via `idempotency_records` (escopo PNEUS)
+5. **Regra "mesmo número de fogo em coletas diferentes = permitido"** — já implementada e testada
+
+---
+
+## 7. PROPOSTA ARQUITETURAL MÍNIMA (PARA MISSÃO FUTURA)
+
+### Opção 1 — Constraint de Banco (Recomendada)
+```python
+# backend/db/models/tire.py — adicionar em __table_args__
+from sqlalchemy import UniqueConstraint
+
+__table_args__ = (
+    CheckConstraint(...),
+    CheckConstraint(...),
+    CheckConstraint(...),
+    CheckConstraint(...),
+    UniqueConstraint("collection_id", "numero_fogo",
+                     name="uq_tire_collection_numero_fogo",
+                     postgresql_where=Column("numero_fogo").is_not(None)),
+)
+```
+- Requer **migration** (Alembic)
+- `postgresql_where` permite múltiplos `NULL` (pneus ilegíveis)
+
+### Opção 2 — Validar `numero_serie` da mesma forma
+Adicionar verificação idêntica em `_registrar_pneus` para `numero_serie`.
+
+### Opção 3 — Separação Conceitual (Futuro, NÃO implementar agora)
+Nova entidade `physical_tires` com `numero_fogo` UNIQUE global, e `tires.physical_tire_id` FK.
+> **Registrar como decisão pendente.** O modelo atual (`tires` = ocorrência/evento) já representa corretamente.
+
+---
+
+## 8. TESTES NECESSÁRIOS (CASO HAJA ALTERAÇÃO FUTURA)
+
+| Teste | Descrição |
+|-------|-----------|
+| Race condition backend | 2 requests POST `/conferencia/pneus` simultâneos com mesmo `numero_fogo` na mesma coleta → apenas 1 sucede |
+| Constraint de banco | INSERT direto em `tires` com `collection_id` + `numero_fogo` duplicado → erro integridade |
+| `numero_serie` duplicado | Mesmo `numero_serie` na mesma coleta → 409 (se Opção 2) |
+| Múltiplos ilegíveis | Comportamento definido para múltiplos `ilegivel=True` sem `numero_fogo` |
+| Flutter erro 409 | Tela exibe erro amigável quando backend retorna duplicidade |
+| Regressão histórico | Mesmo `numero_fogo` em Coleta A e B → ambos sucedem |
+
+---
+
+## 9. RESPOSTA À PERGUNTA CENTRAL DA MISSÃO
+
+> **"O mesmo Número de Fogo pode voltar em uma coleta posterior sem ser tratado como duplicidade, enquanto continua proibido duplicá-lo dentro da mesma coleta?"**
+
+**RESPOSTA: SIM — o sistema já permite isso corretamente.**
+
+**Provas:**
+1. Modelo: `tires.numero_fogo` sem `UNIQUE` global nem composto
+2. Backend: Validação filtra **apenas por `collection_id`**
+3. Teste explícito: `test_09` — cria Coleta A e B, insere `ABC123` em ambas → **ambas 201**, banco confirma 2 registros
+4. Documentação: `06_MODELO_DE_DADOS.md` §4.1: *"Entre clientes distintos ou em processos de remarcagem industrial, o mesmo número de fogo pode aparecer. Por isso, a chave primária da tabela é o UUIDv4 interno."*
+
+---
+
+## 10. ARQUIVOS ANALISADOS
+
+### Backend
+- `backend/db/models/tire.py`
+- `backend/db/models/collection_item.py`
+- `backend/db/models/collection.py`
+- `backend/app/collections.py` (função `_registrar_pneus`)
+- `backend/tests/test_conferencia.py` (testes 06, 07, 08, 09, 10, 16)
+- `backend/tests/test_dot_repetition.py`
+
+### Flutter
+- `meu_app_coleta_pneus/lib/core/models/pneu.dart`
+- `meu_app_coleta_pneus/lib/prestador/tela_prestador_conferencia.dart`
+- `meu_app_coleta_pneus/lib/core/api/api_service.dart`
+- `meu_app_coleta_pneus/lib/core/outbox/outbox_service.dart`
+- `meu_app_coleta_pneus/test/tela_prestador_conferencia_test.dart`
+- `meu_app_coleta_pneus/test/tela_cliente_resumo_coleta_test.dart`
+
+### Documentação
+- `03_REGRAS_DE_NEGOCIO.md` (§4 Identificação dos Pneus)
+- `06_MODELO_DE_DADOS.md` (§3, §4, §7, §8)
+- `12_DECISOES_ARQUITETURAIS.md` (ADR 10, ADR 12)
+
+---
+
+## 11. PRÓXIMOS PASSOS RECOMENDADOS
+
+| Prioridade | Ação | Observação |
+|------------|------|------------|
+| **Alta** | Definir próxima missão funcional (ex: Missão 35 funcional ou 36) | Aguardar definição de escopo |
+| **Média** | Criar migration para `UniqueConstraint(collection_id, numero_fogo)` | Requer testes de concorrência; missão separada |
+| **Baixa** | Decidir sobre validação de `numero_serie` | Alinhar com produto |
+| **Baixa** | Registrar decisão pendente: entidade `physical_tires` para rastrear pneu físico através de recapagens | Só se necessidade real surgir |
+
+---
+
+## 12. DECISÕES PENDENTES ATUALIZADAS (CONFORME STATUS_DO_PROJETO.md §8)
+
+Manter as existentes. Adicionar:
+- **Nova pendência:** Constraint de banco para `numero_fogo` por coleta (race condition)
+- **Nova pendência:** Validação de duplicidade de `numero_serie` na mesma coleta
+
+---
+
+## 13. CONFIRMAÇÃO FINAL
+
+- ✅ Análise completa realizada
+- ✅ Código, banco, testes e documentação consultados
+- ✅ **Nenhuma alteração realizada**
+- ✅ Relatório gerado para continuidade segura
+- ✅ Próximas missões podem ser planejadas com base factual
+
+---
+
+**FIM DO RELATÓRIO 47**

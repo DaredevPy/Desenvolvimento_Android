@@ -37,7 +37,8 @@ class _TelaClienteMinhasColetasState extends State<TelaClienteMinhasColetas> {
   }
 
   void _recarregar() {
-    setState(() => _future = _carregar());
+    _future = _carregar();
+    setState(() {});
   }
 
   void _navegarCriarColeta() async {
@@ -61,6 +62,70 @@ class _TelaClienteMinhasColetasState extends State<TelaClienteMinhasColetas> {
       ),
     );
     _recarregar();
+  }
+
+  bool _podeCancelar(String status) => status == 'SOLICITADA';
+
+  Future<void> _cancelar(Map<String, dynamic> coleta) async {
+    final coletaId = coleta['id'] as String;
+    final confirmado = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Cancelar coleta'),
+        content: const Text(
+          'Ao confirmar, a coleta será marcada como CANCELADA. '
+          'Esta ação não pode ser desfeita. Deseja continuar?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancelar'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+            child: const Text('Confirmar cancelamento'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmado != true || !mounted) return;
+
+    try {
+      await widget.api.cancelarColeta(coletaId);
+      if (!mounted) return;
+      _recarregar();
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Coleta cancelada com sucesso.'),
+          backgroundColor: Colors.green,
+        ),
+      );
+    } on Exception catch (e) {
+      if (!mounted) return;
+      final mensagem = _mensagemErroCancelar(e);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(mensagem), backgroundColor: Colors.red),
+      );
+    }
+  }
+
+  String _mensagemErroCancelar(Exception e) {
+    final texto = e.toString();
+    if (texto.contains('Erro HTTP 403')) {
+      return 'Operação não permitida. Apenas o dono da coleta pode cancelar.';
+    }
+    if (texto.contains('Erro HTTP 404')) {
+      return 'Coleta não encontrada.';
+    }
+    if (texto.contains('Erro HTTP 409')) {
+      return 'A coleta não pode ser cancelada no estado atual (somente SOLICITADA).';
+    }
+    if (texto.contains('Erro HTTP 422')) {
+      return 'Erro de validação. Tente novamente.';
+    }
+    return 'Erro de conexão. Verifique sua internet e tente novamente.';
   }
 
   String _rotuloStatus(String status) {
@@ -144,16 +209,28 @@ class _TelaClienteMinhasColetasState extends State<TelaClienteMinhasColetas> {
                   0,
                   (soma, item) => soma + ((item['quantidade_declarada'] as num?)?.toInt() ?? 0),
                 );
+                final status = c['status'] as String? ?? '';
                 return Card(
                   margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
                   child: ListTile(
                     title: Text(c['codigo_identificador'] ?? ''),
                     subtitle: Text(
-                      '${_rotuloStatus(c['status'] ?? '')} · '
+                      '${_rotuloStatus(status)} · '
                       '$totalItens pneu(s) · '
                       '${itens.length} item(ns)',
                     ),
-                    trailing: const Icon(Icons.chevron_right),
+                    trailing: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        if (_podeCancelar(status))
+                          IconButton(
+                            icon: const Icon(Icons.cancel_outlined, color: Colors.red),
+                            tooltip: 'Cancelar coleta',
+                            onPressed: () => _cancelar(c),
+                          ),
+                        const Icon(Icons.chevron_right),
+                      ],
+                    ),
                     onTap: () => _abrirDetalhe(c),
                   ),
                 );

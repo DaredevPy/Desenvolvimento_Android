@@ -1,7 +1,7 @@
 # backend/db/models/tire.py
 from datetime import datetime
 from typing import Optional
-from sqlalchemy import String, DateTime, ForeignKey, Integer, Numeric, Boolean, Text, CheckConstraint
+from sqlalchemy import String, DateTime, ForeignKey, Integer, Numeric, Boolean, Text, CheckConstraint, Index, Column
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from .base import Base, generate_uuid, utc_now
 
@@ -33,4 +33,10 @@ class Tire(Base):
         CheckConstraint("semana_fabricacao >= 1 AND semana_fabricacao <= 53", name="check_tire_semana"),
         CheckConstraint("ano_fabricacao >= 0 AND ano_fabricacao <= 99", name="check_tire_ano"),
         CheckConstraint("idade_calculada_anos >= 0", name="check_tire_idade"),
+        Index(
+            "uq_tires_collection_numero_fogo",
+            "collection_id", "numero_fogo",
+            unique=True,
+            postgresql_where=Column("numero_fogo").is_not(None),
+        ),
     )
