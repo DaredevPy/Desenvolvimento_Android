@@ -27,7 +27,7 @@ Android, iOS, Web). Consome a API FastAPI do diretório `backend/` via REST/HTTP
 - `connectivity_plus` — detecção de reconexão para o disparo automático da
   sincronização offline (Android/iOS/Web).
 - `uuid` — geração de UUIDv4 para idempotência.
-- `firebase_core`, `cloud_firestore` — protótipo legado das telas atuais.
+- `flutter_secure_storage` — armazenamento seguro de token JWT.
 
 A URL base da API é definida em tempo de build (`--dart-define=API_BASE_URL=...`,
 padrão `http://localhost:8000`).

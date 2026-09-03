@@ -1,0 +1,178 @@
+RELATÓRIO 50 — AUDITORIA DE CÓDIGO LEGADO (MISSÃO 38)
+============================================================
+
+DATA: 2026-09-03
+MISSÃO: 38 — Auditoria do Código Legado (investigação apenas, sem alterações)
+BASELINE ANTES DA MISSÃO:
+  - Flutter: 210/210 testes passando
+  - Backend: 188/188 testes passando
+  - flutter analyze: 0 issues
+
+============================================================
+RESUMO EXECUTIVO
+============================================================
+Todo código Firebase/Firestore encontrado é LEGADO CONFIRMADO (Categoria B) —
+completamente desconectado da arquitetura atual:
+  Flutter → ApiService/Outbox → FastAPI → PostgreSQL
+
+Nenhum arquivo legado é importado, instanciado ou navegado no fluxo atual.
+A remoção segura pode ser feita em missão dedicada sem impacto no funcionamento.
+
+============================================================
+A. RESUMO POR CATEGORIA
+============================================================
+| Categoria | Quantidade | Descrição |
+|-----------|------------|-----------|
+| A — ATIVO | 0 | Nenhum código Firebase ativo no fluxo atual |
+| B — LEGADO CONFIRMADO | 11 itens | 6 arquivos + 2 dependências + 2 serviços + 1 model |
+| C — CANDIDATO À REMOÇÃO | 0 | — |
+| D — DOCUMENTAÇÃO/REFERÊNCIA | 2 | README.md + models_test.dart (grupo Pneu) |
+| E — INDETERMINADO | 0 | — |
+
+============================================================
+B. FIREBASE/FIRESTORE — REFERÊNCIAS ENCONTRADAS
+============================================================
+
+FLUTTER (lib/):
+1. lib/core/services/firebase_service.dart
+   - Wrapper singleton: Firebase.initializeApp(), FirebaseFirestore.instance
+   - Collections: 'pneus', 'clientes', 'prestadores'
+
+2. lib/cliente/cliente_service.dart
+   - Usa FirebaseService para adicionarPneu() (doc.set) e listarMeusPneus() (stream)
+
+3. lib/prestador/prestador_service.dart
+   - Usa FirebaseService para listarPneusPendentes() e atualizarStatusPneu()
+
+4. lib/core/models/pneu.dart
+   - Modelo legado: id, clienteId, tipo, quantidade, status (pendente/coletado/finalizado),
+     dataCriacao, endereco, latitude, longitude
+   - Diferente do modelo atual de pneus da conferência (DOT, numero_fogo, etc.)
+
+5. lib/core/widgets/card_pneu.dart
+   - Widget que renderiza o modelo Pneu legado
+
+6. lib/cliente/tela_cliente_adicionar_pneu.dart
+   - Tela legada que usa ClienteService para salvar Pneu no Firestore
+
+DEPENDÊNCIAS (pubspec.yaml):
+7. firebase_core: ^2.24.2
+8. cloud_firestore: ^4.17.0
+
+BACKEND: Zero referências a Firebase/Firestore.
+
+============================================================
+C. ARQUIVOS — CLASSIFICAÇÃO DETALHADA
+============================================================
+| Arquivo | Categoria | Quem referencia | Observação |
+|---------|-----------|-----------------|------------|
+| lib/core/services/firebase_service.dart | B | cliente_service.dart, prestador_service.dart | Wrapper Firebase; não usado no fluxo atual |
+| lib/cliente/cliente_service.dart | B | tela_cliente_adicionar_pneu.dart | Serviço legada; usa Firestore |
+| lib/prestador/prestador_service.dart | B | ninguém | Serviço legada; NÃO importado no fluxo atual |
+| lib/core/models/pneu.dart | B | cliente_service.dart, prestador_service.dart, tela_cliente_adicionar_pneu.dart, card_pneu.dart, models_test.dart | Modelo legada; campos diferentes do atual |
+| lib/core/widgets/card_pneu.dart | B | ninguém | Widget legada; NÃO importada |
+| lib/cliente/tela_cliente_adicionar_pneu.dart | B | ninguém | Tela legada; NÃO navegada (não em rotas, não chamada) |
+| pubspec.yaml → firebase_core | B | firebase_service.dart | Só usado pelo legado |
+| pubspec.yaml → cloud_firestore | B | firebase_service.dart | Só usado pelo legado |
+
+============================================================
+D. DEPENDÊNCIAS
+============================================================
+| Dependência | Uso encontrado | Categoria | Ação futura |
+|-------------|----------------|-----------|-------------|
+| firebase_core: ^2.24.2 | Apenas em firebase_service.dart (legacy) | B | Removível após limpeza |
+| cloud_firestore: ^4.17.0 | Apenas em firebase_service.dart (legacy) | B | Removível após limpeza |
+| uuid, http, shared_preferences, connectivity_plus, flutter_secure_storage | Usados no fluxo atual (ApiService, Outbox, Sessão) | A | Manter |
+
+============================================================
+E. TESTES
+============================================================
+| Teste | Dependência do legado | Status |
+|-------|----------------------|--------|
+| test/models_test.dart → grupo "Testes do Modelo Pneu" | Testa exclusivamente lib/core/models/pneu.dart (legacy) | D — Desaparecerá com remoção do modelo |
+| Demais 203 testes | Zero referências a Firebase/Firestore/legado | A — Todos passam (210/210) |
+
+============================================================
+F. DOCUMENTAÇÃO
+============================================================
+| Documento | Referência à arquitetura antiga |
+|-----------|--------------------------------|
+| meu_app_coleta_pneus/README.md (linha 30) | "- firebase_core, cloud_firestore — protótipo legado das telas atuais." |
+| Documentos raiz (01_ a 12_, AGENTS.md) | Zero referências — descrevem apenas arquitetura atual |
+
+============================================================
+G. RISCOS IDENTIFICADOS
+============================================================
+1. NENHUM risco de interferência no funcionamento atual:
+   - Código legado completamente isolado
+   - Não importado por main.dart
+   - Não está nas rotas do MaterialApp
+   - Não instanciado por nenhum service/tela atual
+   - PrestadorService e CardPneu: ZERO referências no projeto
+   - TelaClienteAdicionarPneu: não navegada em nenhum ponto
+
+2. Dependências Firebase no pubspec.yaml:
+   - Apenas aumentam tamanho do build
+   - Não causam erro em runtime (Firebase.initializeApp() nunca chamado no fluxo atual)
+
+3. Teste models_test.dart (grupo Pneu):
+   - Falhará ao remover pneu.dart legada
+   - Precisará ser removido/ajustado em missão futura
+
+============================================================
+H. RECOMENDAÇÃO PARA PRÓXIMAS MISSÕES
+============================================================
+| Item | Recomendação |
+|------|--------------|
+| firebase_service.dart | Pode remover com segurança — sem referências no fluxo atual |
+| cliente_service.dart | Pode remover com segurança — usado apenas por tela legada |
+| prestador_service.dart | Pode remover com segurança — ZERO referências |
+| pneu.dart (modelo legado) | Pode remover com segurança — usado apenas por código legado |
+| card_pneu.dart | Pode remover com segurança — ZERO referências |
+| tela_cliente_adicionar_pneu.dart | Pode remover com segurança — NÃO navegada |
+| firebase_core + cloud_firestore (pubspec.yaml) | Pode remover com segurança — só usados pelo legado |
+| models_test.dart (grupo Pneu) | Precisa de confirmação — remover junto com modelo |
+| README.md linha 30 | Pode remover/atualizar — apenas documentação |
+
+============================================================
+ARQUITETURA ATUAL CONFIRMADA (FLUXOS ATIVOS)
+============================================================
+CLIENTE:
+  - TelaClienteMinhasColetas → ApiService.listarMinhasColetas() → GET /api/v1/collections
+  - TelaClienteCriarColeta → OutboxService.agendarCriacaoDeColeta() → POST /api/v1/collections (com X-Idempotency-Key)
+  - TelaClienteResumoColeta → ApiService.obterColeta() + contestarColeta() + cancelarColeta()
+
+PRESTADOR:
+  - TelaPrestadorListarPendentes → ApiService.listarDisponiveis() → GET /api/v1/collections/disponiveis
+  - TelaPrestadorMinhasColetas → ApiService.listarMinhasColetas() → GET /api/v1/collections
+  - TelaPrestadorDetalheColeta → ApiService.aceitar(), avancarStatus(), iniciarConferencia()
+  - TelaPrestadorConferencia → ApiService.listarPneusConferencia(), registrarPneus (Outbox), concluirConferencia (Outbox)
+  - TelaPrestadorResumoColeta → leitura final
+
+BACKEND (FastAPI):
+  - router collections.py: criar, listar, obter, aceitar, cancelar, avancar status, conferência (iniciar/pneus/concluir), contestar
+  - Idempotência: criação, pneus, conclusão, finalização (via X-Idempotency-Key)
+  - Número de Fogo: índice único parcial PostgreSQL (collection_id + numero_fogo WHERE NOT NULL)
+  - DOT: repetição permitida, alerta ≥7 anos configurável
+  - Estados: SOLICITADA → ACEITA → EM_DESLOCAMENTO → EM_CONFERENCIA → CARREGADA → FINALIZADA → CONTESTADA
+  - Cancelamento: apenas CLIENTE em SOLICITADA → CANCELADA (sem Outbox, sem idempotência)
+
+============================================================
+PRÓXIMOS PASSOS SUGERIDOS
+============================================================
+1. Missão de limpeza: remover os 6 arquivos legados + 2 dependências + atualizar README
+2. Missão de limpeza: remover grupo "Testes do Modelo Pneu" de models_test.dart
+3. Verificar se há outros vestígios não mapeados (busca completa já feita — nenhum encontrado)
+4. Confirmar que MISSÃO 39+ continuará sobre arquitetura atual (FastAPI/PostgreSQL)
+
+============================================================
+VALIDAÇÃO FINAL (SEM ALTERAÇÕES NO CÓDIGO)
+============================================================
+✅ Flutter: 210/210 testes passando
+✅ Backend: 188/188 testes passando (test_collections.py: 17/17)
+✅ flutter analyze: 0 issues
+✅ Nenhum arquivo modificado durante esta missão
+
+============================================================
+FIM DO RELATÓRIO 50
+============================================================
