@@ -1,0 +1,217 @@
+RELATORIO 56 — STATUS DE ETAPAS E PARENTE — PRONTO PARA DECISOES
+=====================================================================
+
+DATA: 2026-09-04
+MISSAO: 44 — Diagnostico de estado e roteiro para decisoes
+MODO: APENAS STATUS E ROTEIRO — NENHUMA ALTERACAO DE CODIGO
+
+=====================================================================
+1. RESUMO EXECUTIVO
+=====================================================================
+
+### Posicao Atual do Projeto
+- Versao: VS_2.2 (commit 036599f)
+- Status: PAUSADO aguardando decisoes do responsavel
+- Motivo do pause: 11 decisoes de negocio pendentes (Missao 43)
+- Ultima alteracao de codigo: Nenhuma (desde Missao 39 - remocao de legado Firebase)
+
+### Contexto de Pausa
+O projeto esta paralisado nas seguintes decisoes criticas:
+1. CLIENTE pode cancelar depois de ACEITA? (SIM ou NÃO)
+2. Justificativa e obrigatoria? (SIM ou NÃO)
+3. Formato da justificativa? (texto livre / enum / estruturado)
+4. Foto/evidencia e obrigatoria? (SIM / NÃO / N/A)
+5. Existe multa, taxa ou compensacao financeira? (com/para/nome)
+6. Quais estados podem ser cancelados alem de ACEITA? (A / B / C)
+7. Cancelamento tera idempotencia? (SIM / NÃO / SIM offline)
+8. Cancelamento deve gerar auditoria? (SIM / NÃO / SIM completa)
+9. Onde armazenar dados do cancelamento? (audit_logs / collections / tabela separada)
+10. Notificacao ao CLIENTE quando Prestador/Admin cancela? (SIM / NÃO / condicional)
+11. Cancelamento afeta reputacao do PRESTADOR? (direto / indireto / nao afeta)
+
+Todas as 11 decisoes aguardam resposta do responsavel pelo produto antes que qualquer implementacao possa ser considerada segura e definitiva.
+
+=====================================================================
+2. O QUE JA FOI CONCLUIDO
+=====================================================================
+
+### Missoes Concluidas Com Sucesso
+- Missao 39 (Relatorio_52.txt): Remocao segura de codigo legado Firebase/Firestore
+  * 6 arquivos removidos, 2 dependencias Firebase removidas, 4 testes removidos
+  * Zero referencias restantes ao legado
+  * flutter analyze: 0 issues; flutter test: 206/206 passando
+  * Backend: 188/188 testes passando
+
+- Missao 41 (Relatorio_53.txt): Analise das 13 decisoes sobre CANCELAMENTO ACEITA -> CANCELADA
+  * Identificacao das 13 questoes fundamentais
+  * Documentacao do comportamento existente
+  * Mapeamento de transicoes de estado
+  * Analise de auditoria e idempotencia
+
+- Missao 42 (Relatorio_54.txt): Consolidaçao das 13 decisoes
+  * Registro de todas as questoes identificadas
+  * Separacao por categorias (regra definida, pendente, recomendacao, inconsistencia)
+  * Nao implementacao de codigo
+
+- Missao 43 (Relatorio_55.txt): Fechamento de especificacao com correcao
+  * Documentacao das 11 decisoes pendentes
+  * Secao 4 reescrita para identificar recomendacoes vs regras definitivas
+  * Avisos claros de que nada estava aprovado
+  * Nao implementacao de codigo
+
+### Regras e Estruturas Preservadas (nao alteradas)
+- Arquitetura Flutter/Dart -> ApiService/Outbox -> FastAPI/Python -> PostgreSQL
+- 3 perfis: CLIENTE, PRESTADOR, ADMINISTRADOR
+- Backend como autoridade absoluta
+- Machine de estados: SOLICITADA -> ACEITA -> EM_DESLOCAMENTO -> EM_CONFERENCIA -> CARREGADA -> FINALIZADA
+- Endpoint /cancelar atual (CLIENTE + SOLICITADA only)
+- TRANSICOES_VALIDAS["ACEITA"] includes CANCELADA
+- Doc 05: Prestador/Admin cancelam ACEITA com justificativa
+- Doc 03: Foto obrigatoria apenas para divergencias de quantidade
+- Doc 07: Snapshots financeiros apenas em FINALIZADA
+
+=====================================================================
+3. DECISOES PENDENTES — RESUMO PARA RESPONSAVEL
+=====================================================================
+
+As 11 decisoes que bloqueiam o progresso, com impacto e recomendacao tecnica:
+
+| Decisao | Questao | Opcoes | Impacto se escolhida errada | Recomendacao tecnica |
+|---------|---------|--------|----------------------------|----------------------|
+| 1 | CLIENTE pode cancelar ACEITA? | A) SIM B) NÃO | Se SIM: complexidade no frontend, conflitos com regra de responsabilidade. Se NÃO: manutencao da regra atual. | B) NÃO — manter regra atual (CLIENTE so cancela SOLICITADA) |
+| 2 | Justificativa e obrigatoria? | A) SIM B) NÃO | Se SIM: usuario obrigado a explicar. Se NÃO: cancelamentos sem explicacao. | A) SIM — alinhado com doc 05 |
+| 3 | Formato da justificativa? | A) Texto livre B) Enum C) Estruturado | Se B/C: UX mais guiada mas mais complexa. Se A: flexibilidade total. | A) Texto livre — mais simples para inicio |
+| 4 | Foto/evidencia obrigatoria? | A) SIM B) NÃO C) N/A | Se A: UX mais pesada (foto/tirar foto). Se B: mais flexivel. Se C: consistente (cancelamento != divergencia). | C) N/A — cancelamento e diferente de divergencia |
+| 5 | Multa/taxa/compensacao? | A) multa PRESTADOR B) compensacao CLIENTE C) NENHUMA | Se A/B: complica regra de valores desacoplados (doc 03 §2, doc 07). Se C: simplicidade. | C) NENHUMA — evita conflitos com valores desacoplados |
+| 6 | Quais estados podem cancelar? | A) APENAS ACEITA B) ACEITA + EM_DESLOCAMENTO C) Todos pre-FINALIZADA | Se B/C: risco de cancelamento depois que pneus ja foram coletados. Se A: mais controlado. | A) APENAS ACEITA — consistente com TRANSICOES_VALIDAS |
+| 7 | Idempotencia? | A) SIM obrigatoria B) NÃO C) SIM se offline | Se A/B: risco de duplicidade se rede cair. Se C: implementacao seletiva. | A) SIM obrigatoria — resiliencia Outbox |
+| 8 | Gerar auditoria? | A) SIM obrigatorio B) NÃO C) SIM completa | Se B: dificil auditar depois. Se A/C: conformidade doc 10. | C) SIM completa — fonte primaria de auditoria |
+| 9 | Onde armazenar? | A) Apenas audit_logs B) collections + audit_logs C) tabela separada | Se A: dificil query. Se C: overhead de join. Se B: melhor equilibrio. | B) collections (colunas nullable) + audit_logs |
+| 10 | Notificacao ao CLIENTE? | A) SIM obrigatoria B) NÃO C) condicional | Se A: custo de envio, usuario pode se sentir monitorado. Se B: cliente surpreso. Se C: ponto medio. | A) SIM obrigatoria — cliente tem direito a saber |
+| 11 | Afeta reputacao? | A) diretamente B) indiretamente C) nao afeta | Se A: feedback claro para prestador. Se B: sem formula definida. Se C: simplcidade. | B) indiretamente — contribui para score, sem formula fixa |
+
+=====================================================================
+4. ESTADO DAS REGRAS TECNICAS E DE NEGOCIO
+=====================================================================
+
+### Regras Tecnicas (ja definidas, nao dependem de decisoes)
+- ✅ Transicao ACEITA -> CANCELADA existe em TRANSICOES_VALIDAS
+- ✅ Apenas PRESTADOR e ADMINISTRADOR podem cancelar em ACEITA (doc 05)
+- ✅ Cancelamento exige justificativa (doc 05: "com justificativa")
+- ✅ Endpoint /cancelar atual: CLIENTE + SOLICITADA apenas
+- ✅ Estados posteriores nao possuem CANCELADA definida
+- ✅ Cancelamento nao e divergencia de quantidade (foto nao e obrigatoria por doc 03 §3)
+- ✅ Nenhuma multa/taxa financeira definida atualmente (doc 07)
+
+### Regras de Negocio (dependem de decisoes pendentes)
+- ❓ CLIENTE pode cancelar ACEITA? (DECISAO 1)
+- ❓ Justificativa e obrigatoria ou opcional? (DECISAO 2)
+- ❓ Qual o formato da justificativa? (DECISAO 3)
+- ❓ Foto/evidencia e obrigatoria? (DECISAO 4)
+- ❓ Ha multa/taxa/ compensacao financeira? (DECISAO 5)
+- ❓ Quais estados podem ser cancelados? (DECISAO 6)
+- ❓ Cancelamento tem idempotencia? (DECISAO 7)
+- ❓ Cancelamento gera auditoria obrigatoria? (DECISAO 8)
+- ❓ Onde os dados sao armazenados? (DECISAO 9)
+- ❓ Cliente deve ser notificado? (DECISAO 10)
+- ❓ Cancelamento afeta score do prestador? (DECISAO 11)
+
+=====================================================================
+5. ROTEIRO SEGURO PARA PROXIMAS ETAPAS
+=====================================================================
+
+### Fase 1 — Aguardar Decisoes (ATUAL — Nao mover nada)
+✅ NAO alterar codigo Flutter
+✅ NAO alterar codigo Backend
+✅ NAO alterar banco de dados
+✅ NAO criar migrations
+✅ NAO alterar testes
+✅ NAO fazer commit de cambios em codigo
+
+Apenas aguardar as 11 decisoes do responsavel. Cada decisao deve ser respondida com:
+- A opcao escolhida (A, B ou C)
+- A data da decisao
+- O nome ou rol do responsavel que aprovou
+
+### Fase 2 — Definicao da Especificacao Definitiva (depois das decisoes)
+Uma vez confirmadas todas as 11 decisoes:
+1. Gerar Relatorio_57.txt com especyfikacao definitiva final
+2. Definir schema de request e resposta da API
+3. Definir modelo de dados (backend e frontend)
+4. Definir fluxo de testes necessarios
+
+### Fase 3 — Implementacao (apenas APOS Fase 2)
+1. Implementacao Backend: novo endpoint, validacoes, auditoria
+2. Implementacao Frontend: novo metodo ApiService, teles/acoes UI
+3. Criacao de testes unitarios e de integracao
+4. flutter analyze e flutter test para validacao
+
+### Fase 4 — Validacao e Lancamento
+1. rodar flutter analyze: 0 issues
+2. rodar flutter test: 100% de aprovacao
+3. rodar suites de testes backend (pytest)
+4. verificar git status: apenas arquivos de relatorio e codigo novo esperados
+5. Caso aprovado: anunciar nova versao (VS_2.3 ou patch)
+
+=====================================================================
+6. GUARDA-ROUS — O QUE NUNCA DEVE SER FEITO
+=====================================================================
+
+### Proibicoes Absolutas (j aprenderam com Relatorio_55)
+1. NUNCA tratar recomendacoes tecnicas como regras definitivas sem aprovacao formal
+2. NUNCA implementar codigo baseado em decisoes nao confirmadas do responsavel
+3. NUNCA estender regras de negocio além do que estao documentados nos docs 03-12
+4. NUNCA introduzir Firebase/Firestore novamente (j removido na Missao 39)
+5. NUNCA assumir que uma decisao e consenso se nao houver registro formal
+6. NUNCA pular a validacao do responsavel para "agilizar" implementacao
+7. NUNCA alterar a arquitetura estabelecida (Flutter->ApiService->FastAPI->PostgreSQL)
+8. NUNCAintroduzir dependencias desnecessarias apenas para "facilitar" o desenvolvimento
+
+### Sinais de Alerta (se acontecerem)
+- Alguem implementa codigo sem que todas as 11 decisoes estejam confirmadas
+- Relatorio de implementacao ignora decisoes pendentes
+- Commits com comentarios "por enquanto" ou "depois arrumamos"
+- Alteracao de arquivos de banco de dados sem migration versionada
+- Flutter analisando issues novos após decisao de pausar
+
+=====================================================================
+7. STATUS DO GIT
+=====================================================================
+
+Arquivos modificados nesta sessao:
+- Relatorio_56.txt (NOVO - diagnostico de estado e roteiro)
+
+Arquivos ja existentes (nao alterados por esta missao):
+- Relatorio_55.txt (Missao 43 - especificacao com corrigida secao 4)
+- Relatorio_54.txt (Missao 42 - consolidacao das 13 decisoes)
+- Relatorio_53.txt (Missao 41 - analise original)
+- Relatorio_52.txt (Missao 39 - remocao de legado)
+- .gitignore (modificacao preexistente)
+- Build caches (modificacoes preexistentes)
+
+Nenhum codigo, teste, banco, dependencia ou documentacao oficial foi alterado.
+Apenas o arquivo Relatorio_56.txt foi criado como diagnostico de estado.
+
+=====================================================================
+8. PROXIMOS PASOS IMEDIATOS
+=====================================================================
+
+1. Responsavel do projeto: responder as 11 decisoes pendentes (DECISAO 1 a 11)
+2. Cada decisao deve especificar: opcao escolhida + data + responsavel
+3. Aguardar confirmacao formal antes de qualquer discussao de implementacao
+4. Agendar revisao tecnica apes de todas as decisoes confirmadas
+5. Apos confirmadas: gerar Relatorio_57.txt com especyfikacao definitiva
+6. Apos especyfikacao: iniciar Fase 3 (implementacao)
+
+### Prioridade (depois de decisoes confirmadas)
+1. Funcionamento (fluxo operacional do cancelamento ACEITA -> CANCELADA)
+2. Regras de negocio (todas as 11 decisoes definidas)
+3. Seguranca (validacoes de role, justificativa, auditoria)
+4. Consistencia dos dados (audit_logs + collections)
+5. Testes (cobertura esperada: 210+ testes backend, 206+ testes frontend)
+6. Arquitetura/manutenibilidade (padroes estabelecidos)
+7. Estetica (UI consistente com o resto do aplicativo)
+
+=====================================================================
+FIM DO RELATORIO 56
+=====================================================================

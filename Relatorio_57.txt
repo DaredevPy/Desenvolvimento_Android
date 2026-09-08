@@ -1,0 +1,147 @@
+RELATORIO 57 — MISSAO 45: REGISTRO DA DECISAO 1 E PRESENTACAO DA DECISAO 2
+=====================================================================
+
+DATA: 2026-09-04
+MISSAO: 45 — Registro da Decisao 1 + apresentacao da Decisao 2
+MODO: APENAS REGISTRO E APRESENTACAO — NENHUMA ALTERACAO DE CODIGO
+
+=====================================================================
+1. MISSAO 45 — REGISTRO DA DECISAO 1 E PRESENTACAO DA DECISAO 2
+=====================================================================
+
+=====================================================================
+2. DECISAO 1 — REGISTRO FORMAL (APROVADA PELO RESPONSAVEL)
+=====================================================================
+
+### DECISAO 1 — CONFIRMADA
+**Questao:** CLIENTE pode cancelar uma coleta depois que ela estiver no estado ACEITA?
+
+**Decisao:** DECISAO 1 = B) CLIENTE NÃO pode cancelar após ACEITA
+
+**Registro Formal:**
+- CLIENTE somente pode cancelar quando a coleta estiver em SOLICITADA
+- apos ACEITA, o cancelamento pelo CLIENTE nao e permitido
+- Essa decisão e registrada como APROVADA, e nao como recomendacao
+- A decisao 1 altera o status atual: CLIENTE nao tem mais permissao de cancelamento em ACEITA
+
+**Impacto Imediato:**
+- Nenhuma alteracao de codigo necessaria imediatamente (ja era regra nao escrita)
+- Documentacao atualizada: doc 05 ja mencionava "Prestador/Admin cancela com justificativa" sem mencionar Cliente em ACEITA
+- Fluxo confirmado: CLIENTE -> SOLICITADA -> (ACEITA/PRESTADOR) -> (apenas PRESTADOR/Admin podem cancelar)
+
+**Registro no Git:**
+- Decisao registrada formalmente no projeto
+- Nao alteracao de arquivos de codigo
+- Apenas documento de decisao administrativa
+
+=====================================================================
+3. DECISAO 2 — APRESENTACAO PARA APROVACAO DO RESPONSAVEL
+=====================================================================
+
+### DECISAO 2 — SOLICITACAO DE APROVACAO
+
+**Questao:** A justificativa para o cancelamento de uma coleta em ACEITA deve ser obrigatoria?
+
+**Opcoes:**
+- A) SIM — justificativa obrigatoria
+- B) NÃO — justificativa nao obrigatoria (opcional)
+
+**Contexto Documentado:**
+- Doc 05 (linha 13): "Prestador/Admin cancela com justificativa"
+- A documentacao existente exige justificativa para Prestador/Admin cancelarem ACEITA
+- A decisao agora e sobre se a justificativa deve ser OBRIGATORIA ou OPcIONAL
+
+**Para o Responsavel decidir:**
+- Se A) SIM: sera necessario implementar validacao no backend para campos nao-vazios
+- Se B) NÃO: o campo pode ser opcional, mas ainda sera registrado se fornecido
+
+**Importante:**
+- Nao transforme a recomendacao tecnica em decisao
+- A decisao deve ser tomada exclusivamente pelo responsavel pelo produto
+- As recomendacoes serao registradas separadamente apes da decisao do responsavel
+
+=====================================================================
+4. STATUS DAS DEMAIS DECISOES
+=====================================================================
+
+### Decisoes 3 a 11 — Permanecem PENDENTES
+
+Todas as outras decisoes (2 a 11) continuam nao decididas APES da Decisao 1 ter sido registrada.
+
+- DECISAO 2: Apresentada acima para aprovacao (SIM ou NÃO sobre justificativa obrigatoria)
+- DECISAO 3: Formato da justificativa? (texto livre / enum / estruturado)
+- DECISAO 4: Foto/evidencia obrigatoria? (SIM / NÃO / N/A)
+- DECISAO 5: Multa, taxa ou compensacao financeira? (A / B / C)
+- DECISAO 6: Quais estados podem ser cancelados alem de ACEITA? (A / B / C)
+- DECISAO 7: Cancelamento tera idempotencia? (SIM / NÃO / SIM offline)
+- DECISAO 8: Cancelamento deve gerar auditoria? (SIM / NÃO / SIM completa)
+- DECISAO 9: Onde os dados do cancelamento devem ser armazenados? (A / B / C)
+- DECISAO 10: Deve haver notificacao ao CLIENTE quando Prestador/Admin cancela? (SIM / NÃO / condicional)
+- DECISAO 11: O cancelamento afeta a reputacao do PRESTADOR? (A / B / C)
+
+Nenhuma dessas decisoes deve ser antecipada ou apreciada nesta missao. Apenas a DECISAO 2 e apresentada para resposta imediata do responsavel.
+
+=====================================================================
+5. REGISTRO DE IMPLEMENTACAO
+=====================================================================
+
+### Nenhuma alteracao autorizada
+- Nao alterar codigo Flutter
+- Nao alterar Backend (FastAPI)
+- Nao alterar banco de dados (PostgreSQL)
+- Nao criar migration
+- Nao alterar testes unitarios ou de integracao
+- Nao refatorar codigo existente
+- Nao criar novos endpoints
+- Nao fazer commit de codigo fonte
+
+### Apenas documentos foram modificados
+- Relatorio_57.txt criado (esta missao)
+- Relatorio_56.txt anterior (status de etapas)
+
+=====================================================================
+6. STATUS DO GIT
+=====================================================================
+
+Arquivos modificados nesta sessao:
+- Relatorio_57.txt (NOVO - registro da Decisao 1 + apresentacao da Decisao 2)
+
+Arquivos ja existentes (nao alterados por esta missao):
+- Relatorio_56.txt (Missao 44 - diagnostico de estado)
+- Relatorio_55.txt (Missao 43 - especificacao com corrigida secao 4)
+- Relatorio_54.txt (Missao 42 - consolidacao das 13 decisoes)
+- Relatorio_53.txt (Missao 41 - analise original)
+- Relatorio_52.txt (Missao 39 - remocao de legado)
+- .gitignore (modificacao preexistente)
+- Build caches (modificacoes preexistentes)
+
+Nenhum arquivo de codigo, nenhum teste, nenhuma configuracao de banco
+ou dependencia foi alterado ou criado (exceto os relatorios de missao).
+
+=====================================================================
+7. PRÓXIMO PASO
+=====================================================================
+
+### Aguardar resposta da DECISÃO 2
+
+O responsavel pelo projeto deve responder unicamente sobre:
+
+**DECISAO 2:** A justificativa para o cancelamento de uma coleta em ACEITA deve ser obrigatoria?
+
+**Opcoes validas:**
+- A) SIM
+- B) NÃO
+
+Apos a resposta da DECISAO 2, a seguinte missa podera ser iniciada:
+- Se DECISAO 2 = A) SIM: preparar implementacao de validacao de campo obrigatorio
+- Se DECISAO 2 = B) NÃO: definir se campo e opcional ou nao utilizado
+
+### Prioridade apos DECISAO 2 confirmada
+1. Registrar decisao no relatorio oficial
+2. Apresentar DECISAO 3 (formato da justificativa) para aprovacao
+3. Apos DECISAO 3: apresentar DECISAO 4 (foto/evidencia)
+4. Continuar sequencialmente atť todas as 11 decisoes estao confirmadas
+
+=====================================================================
+FIM DO RELATORIO 57
+=====================================================================

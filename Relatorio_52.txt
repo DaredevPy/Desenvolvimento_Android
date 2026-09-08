@@ -1,0 +1,165 @@
+RELATÓRIO 52 — AUDITORIA DE INTEGRIDADE PÓS-MISSÃO 39 (MISSÃO 40)
+============================================================
+
+DATA: 2026-09-03
+BRANCH: main
+COMMIT ANALISADO: 036599f7e2d1f781512def5223e9858a00f6a129 (VS_2.2)
+ESTADO DO GIT: Working tree clean, nada para commit
+
+============================================================
+1. IDENTIFICAÇÃO
+============================================================
+- Data: 2026-09-03
+- Branch: main
+- Commit analisado: 036599f (VS_2.2)
+- Estado do Git: Clean — nenhuma alteração pendente, nenhum arquivo não rastreado
+
+============================================================
+2. ESCOPO ANALISADO (MISSÃO 39)
+============================================================
+### Arquivos removidos (6) — Confirmados no commit
+✅ lib/core/services/firebase_service.dart
+✅ lib/cliente/cliente_service.dart
+✅ lib/prestador/prestador_service.dart
+✅ lib/core/models/pneu.dart (modelo legado)
+✅ lib/core/widgets/card_pneu.dart
+✅ lib/cliente/tela_cliente_adicionar_pneu.dart
+
+### Dependências removidas (2) — Confirmadas no commit
+✅ firebase_core: ^2.24.2
+✅ cloud_firestore: ^4.17.0
+
+### Testes removidos — Confirmados no commit
+✅ Apenas grupo "Testes do Modelo Pneu" (4 testes) em test/models_test.dart
+✅ Import de `package:meu_app_coleta_pneus/core/models/pneu.dart` removido
+
+### Documentação alterada — Confirmada no commit
+✅ README.md: removida referência `- firebase_core, cloud_firestore — protótipo legado das telas atuais.`
+✅ README.md: adicionada dependência legítima `flutter_secure_storage`
+
+### Alterações fora do escopo
+**NENHUMA** — O commit contém apenas as alterações autorizadas acima.
+Arquivos de build gerados (dart_tool, android, ios) são consequência esperada do `flutter pub get`.
+
+============================================================
+3. REFERÊNCIAS — BUSCA COMPLETA
+============================================================
+Busca realizada em todo o projeto (lib/, test/, pubspec.yaml, *.md):
+
+| Termo buscado | Encontrado? | Local |
+|---------------|-------------|-------|
+| FirebaseService | NÃO | — |
+| ClienteService | NÃO | — |
+| PrestadorService | NÃO | — |
+| CardPneu | NÃO | — |
+| TelaClienteAdicionarPneu | NÃO | — |
+| firebase_core | NÃO | — |
+| cloud_firestore | NÃO | — |
+| Firebase | NÃO | — |
+| Firestore | NÃO | — |
+| firebase (case-insensitive) | NÃO | — |
+
+**Resultado: ZERO referências restantes ao código legado removido.**
+
+Observação importante: O termo "pneu"/"pneus" aparece 73 vezes no código atual — isso é **ESPERADO E CORRETO**. Refere-se ao fluxo atual de conferência (DOT, marca, medida, número de fogo), NÃO ao modelo legado removido.
+
+============================================================
+4. INTEGRIDADE DO PROJETO
+============================================================
+| Componente | Status | Evidência |
+|------------|--------|-----------|
+| Flutter (compilação/análise) | ✅ ÍNTEGRO | flutter analyze: 0 issues |
+| Backend (FastAPI/PostgreSQL) | ✅ ÍNTEGRO | 188/188 testes passando |
+| API (contratos REST) | ✅ ÍNTEGRO | Testes de integração passando |
+| Outbox (offline/sincronização) | ✅ ÍNTEGRO | Testes de Outbox passando |
+| Autenticação (JWT/sessão) | ✅ ÍNTEGRO | Testes de sessão/login passando |
+| Fluxos Cliente | ✅ ÍNTEGRO | Testes cliente_fluxo_test.dart passando |
+| Fluxos Prestador | ✅ ÍNTEGRO | Testes prestador_*_test.dart passando |
+| Regras de negócio | ✅ ÍNTEGRO | Testes backend (collections, conferência, cancelamento, contestação) passando |
+| Número de Fogo | ✅ ÍNTEGRO | Constraint PostgreSQL uq_tires_collection_numero_fogo ativa |
+| DOT | ✅ ÍNTEGRO | Validação WWYY + alerta ≥7 anos ativa |
+| Estados da coleta | ✅ ÍNTEGRO | Máquina de estados SOLICITADA→ACEITA→EM_DESLOCAMENTO→EM_CONFERENCIA→CARREGADA→FINALIZADA→CONTESTADA |
+| Financeiro | ✅ ÍNTEGRO | Snapshots imutáveis, independência Cliente/Prestador |
+| Idempotência | ✅ ÍNTEGRO | X-Idempotency-Key em criação, pneus, conclusão, finalização |
+
+============================================================
+5. TESTES — RESULTADOS REAIS
+============================================================
+### flutter analyze
+```
+Analyzing meu_app_coleta_pneus...
+No issues found! (ran in 10.2s)
+```
+**Resultado: 0 issues — APROVADO**
+
+### flutter test
+```
+01:02 +206: All tests passed!
+```
+**Resultado: 206/206 testes passando — APROVADO**
+- Redução de 4 testes vs baseline (210→206) é **ESPERADA**: eram os 4 testes do modelo legado `Pneu` removido.
+- Todos os 202 testes funcionais atuais passam.
+
+### Backend (suíte completa)
+```
+================= 188 passed, 2 warnings in 263.98s =================
+```
+**Resultado: 188/188 testes passando — APROVADO**
+- test_collections.py: 17/17
+- test_auth.py: passando
+- test_conferencia.py: passando
+- test_admin_api.py: passando
+- test_contestacao.py: passando
+- test_outbox.py: passando
+- test_idempotencia.py: passando
+- test_ownership.py: passando
+- test_profiles.py: passando
+- test_rbac.py: passando
+- test_financeiro.py: passando
+- test_dot_repetition.py: passando
+- test_db_schema.py: passando
+- test_hardening.py: passando
+- test_app_health.py: passando
+
+============================================================
+6. PROBLEMAS ENCONTRADOS
+============================================================
+| # | Arquivo | Linha | Descrição | Evidência | Impacto | Classificação |
+|---|---------|-------|-----------|-----------|---------|---------------|
+| — | — | — | **NENHUM PROBLEMA ENCONTRADO** | Todas as verificações passaram | — | **SEM PROBLEMA** |
+
+============================================================
+7. CONCLUSÃO
+============================================================
+## APROVADO — nenhuma quebra encontrada
+
+A Missão 39 (Remoção Segura do Código Legado) foi executada corretamente:
+- ✅ Todos os 6 arquivos legados removidos
+- ✅ 2 dependências Firebase/Firestore removidas
+- ✅ 4 testes do modelo legado removidos
+- ✅ Documentação atualizada
+- ✅ Zero referências restantes ao legado
+- ✅ flutter analyze: 0 issues
+- ✅ flutter test: 206/206 passando
+- ✅ Backend: 188/188 passando
+- ✅ Arquitetura atual intacta (Flutter → ApiService/Outbox → FastAPI → PostgreSQL)
+- ✅ Nenhuma funcionalidade atual alterada
+- ✅ Nenhuma alteração fora do escopo autorizado
+
+============================================================
+8. CONFIRMAÇÕES FINAIS
+============================================================
+- ✅ Commit analisado: 036599f (VS_2.2)
+- ✅ Arquivos verificados: 6 removidos, 2 dependências, testes, documentação
+- ✅ Referências quebradas: ZERO encontradas
+- ✅ flutter analyze: 0 issues
+- ✅ flutter test: 206/206
+- ✅ Backend: 188/188
+- ✅ Problemas encontrados: NENHUM
+- ✅ Classificação final: **APROVADO — nenhuma quebra encontrada**
+- ✅ Nenhum código foi alterado durante esta auditoria
+- ✅ Relatório salvo em: C:\Desenvolvimento_Android-main\Desenvolvimento_Android\Relatorio_52.txt
+
+============================================================
+FIM DO RELATÓRIO 52
+============================================================

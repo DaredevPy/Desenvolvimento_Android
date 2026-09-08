@@ -1,0 +1,160 @@
+RELATÓRIO 54 — CONSOLIDAÇÃO DAS 13 DECISÕES SOBRE CANCELAMENTO ACEITA → CANCELADA (MISSÃO 42)
+=====================================================================
+
+DATA: 2026-09-04
+MISSÃO: 42 — Consolidação das 13 decisões já identificadas
+MODO: APENAS CONSOLIDAÇÃO — NENHUMA NOVA ANÁLISE, NENHUM CÓDIGO ALTERADO
+
+=====================================================================
+1. REGRA JÁ DEFINIDA
+=====================================================================
+
+1. QUESTÃO: Transição ACEITA → CANCELADA na máquina de estados
+   SITUAÇÃO ATUAL: Definida em TRANSICOES_VALIDAS["ACEITA"] = {"EM_DESLOCAMENTO", "CANCELADA"}
+   REGRA EXISTENTE: ✅ ACEITA → CANCELADA existe no dicionário de transições válidas
+   DECISÃO DE NEGÓCIO PENDENTE: N/A — regra já definida
+   RECOMENDAÇÃO TÉCNICA: N/A — já está no código
+
+2. QUESTÃO: Prestador pode cancelar coleta em ACEITA
+   SITUAÇÃO ATUAL: Doc 05 explicitamente afirma "Prestador/Admin cancela com justificativa"
+   REGRA EXISTENTE: ✅ CONFIRMADA — PRESTADOR pode cancelar ACEITA (com justificativa obrigatória)
+   DECISÃO DE NEGÓCIO PENDENTE: N/A — já documentado e confirmado
+   RECOMENDAÇÃO TÉCNICA: N/A — regra clara na documentação
+
+3. QUESTÃO: ADMINISTRADOR pode cancelar coleta em ACEITA
+   SITUAÇÃO ATUAL: Doc 05 e doc 04 confirmam Admin tem controle total
+   REGRA EXISTENTE: ✅ CONFIRMADA — ADMINISTRADOR pode cancelar ACEITA (com justificativa obrigatória)
+   DECISÃO DE NEGÓCIO PENDENTE: N/A — já documentado e confirmado
+   RECOMENDAÇÃO TÉCNICA: N/A — regra clara na documentação
+
+4. QUESTÃO: Justificativa é obrigatória no cancelamento após aceite
+   SITUAÇÃO ATUAL: Doc 05 (linha 13): "Prestador/Admin cancela com justificativa"
+   REGRA EXISTENTE: ⚠️ DOCUMENTADA MAS NÃO IMPLEMENTADA — exigida no papel, não no código
+   DECISÃO DE NEGÓCIO PENDENTE: ❓ FORMATO NÃO DEFINIDO — texto livre? Enum? Mínimo de caracteres?
+   RECOMENDAÇÃO TÉCNICA: ⚠️ Necessário definir schema de request antes de implementar
+
+5. QUESTÃO: Foto/evidência obrigatória no cancelamento após aceite
+   SITUAÇÃO ATUAL: Doc 03 §3 exige foto para divergências de quantidade; cancelamento não é divergência
+   REGRA EXISTENTE: ❌ NÃO DEFINIDA — doc 03 não menciona exigência para cancelamento
+   DECISÃO DE NEGÓCIO PENDENTE: ❓ FOTO OBRIGATÓRIA? — decisão de negócio pendente
+   RECOMENDAÇÃO TÉCNICA: ⚠️ Considerar se fotos se aplicam ao cancelamento (provavelmente não, diferente de divergência)
+
+6. QUESTÃO: Impacto financeiro/multa/taxa para cancelamento após aceite
+   SITUAÇÃO ATUAL: Doc 07 financeiro — snapshots imutáveis apenas no FINALIZADA; não mencionado cancelamento pós-aceite
+   REGRA EXISTENTE: ❌ NÃO DEFINIDA — não há regra de multa, taxa ou compensação
+   DECISÃO DE NEGÓCIO PENDENTE: ❓ EXISTE MULTA/PRASTADOR OU COMPENSAÇÃO PARA CLIENTE?
+   RECOMENDAÇÃO TÉCNICA: ℹ️ Impacto financeiro direto parece ser NENHUM (não há snapshot nem transação financeira em ACEITA)
+
+=====================================================================
+2. DECISÃO DE NEGÓCIO PENDENTE
+=====================================================================
+
+7. QUESTÃO: CLIENTE pode cancelar coleta em ACEITA?
+   SITUAÇÃO ATUAL: Doc 05 menciona apenas "Prestador/Admin"; endpoint /cancelar atual só permite CLIENTE em SOLICITADA
+   REGRA EXISTENTE: ❓ NÃO DEFINIDA EXPLICITAMENTE — doc 05 não menciona Cliente cancelando ACEITA
+   DECISÃO DE NEGÓCIO PENDENTE: ❓ SIM ou NÃO — decisão necessária antes de implementar
+   RECOMENDAÇÃO TÉCNICA: ℹ️ Manter regra atual: CLIENTE apenas cancela SOLICITADA; novo endpoint para Pré-Aceite/Admin
+
+8. QUESTÃO: Formato da justificativa (texto livre vs enum vs estruturado)
+   SITUAÇÃO ATUAL: Doc 05 diz apenas "com justificativa" sem especificar formato
+   REGRA EXISTENTE: ❓ NÃO DEFINIDA — text field? Enum de motivos? Estruturado com código + descrição?
+   DECISÃO DE NEGÓCIO PENDENTE: ❓ FORMATO — definir antes de implementar validação no backend
+   RECOMENDAÇÃO TÉCNICA: 💡 Texto livre com validação de não-vazio + código opcional de motivo
+
+9. QUESTÃO: Foto/evidência é obrigatória (diferente de divergência)
+   SITUAÇÃO ATUAL: Doc 03 §3 exige foto para divergências; cancelamento é caso diferente
+   REGRA EXISTENTE: ❌ NÃO DEFINIDA para cancelamento após aceite
+   DECISÃO DE NEGÓCIO PENDENTE: ❓ FOTO OBRIGATÓRIA? — decidir se aplica ou não ao cancelamento
+   RECOMENDAÇÃO TÉCNICA: 💡 Probavelmente NÃO Obrigatória (diferente de divergência de quantidade que exige foto)
+
+10. QUESTÃO: Existe multa/taxa/compensação financeira para cancelamento pós-aceite
+    SITUAÇÃO ATUAL: Doc 07 — prestador pode ter custos de deslocamento; reputação afetada (doc 03 §6)
+    REGRA EXISTENTE: ❌ NÃO DEFINIDA — nenhuma regra financeira explicitada para esse cenário
+    DECISÃO DE NEGÓCIO PENDENTE: ❓ MULTA/TAXA/COMPENSAÇÃO — decisão de negócio necessária
+    RECOMENDAÇÃO TÉCNICA: ℹ️ Sem impacto financeiro direto (sem snapshot, sem transação), mas reputação pode ser afetada
+
+11. QUESTÃO: Quais estados além de ACEITA permitem cancelamento (EM_DESLOCAMENTO, EM_CONFERENCIA, CARREGADA)?
+    SITUAÇÃO ATUAL: TRANSICOES_VALIDAS não inclui CANCELADA para estados pós-ACEITA
+    REGRA EXISTENTE: ❌ APENAS ACEITA tem CANCELADA no dicionário; estados subsequentes não
+    DECISÃO DE NEGÓCIO PENDENTE: ❓ DEFINIR POR CADA ESTADO — ou criar política consistente
+    RECOMENDAÇÃO TÉCNICA: 💡 Se política permitir cancelamento em ACEITA, considerar estender TRANSICOES_VALIDAS para estados subsequentes ou bloqueá-los explicitamente
+
+12. QUESTÃO: Cancelamento terá idempotência (X-Idempotency-Key) para pós-aceite?
+    SITUAÇÃO ATUAL: Endpoint /cancelar atual não tem idempotência; missão 37 decidiu não implementar para CLIENTE/SOLICITADA
+    REGRA EXISTENTE: ❌ NÃO IMPLEMENTADA — nem para cancelamento atual, nem (ainda) para pós-aceite
+    DECISÃO DE NEGÓCIO PENDENTE: ❓ IDEMPOTÊNCIA OBRIGATÓRIA? — especialmente importante se Prestador cancelar offline
+    RECOMENDAÇÃO TÉCNICA: 💡 Se Prestador pode cancelar offline: SIM, obrigatória com Outbox + UUIDv4 key. Se apenas Admin/web: menos crítica mas recomendada
+
+13. QUESTÃO: Auditoria obrigatória no cancelamento após ACEITA → CANCELADA
+    SITUAÇÃO ATUAL: Tabela audit_logs existe e é usada para contestação (CONTESTACAO_COLETA); não usada em cancelamento atual
+    REGRA EXISTENTE: ⚠️ COMPORTAMENTO PREVISTO — audit_logs suporta todos os campos necessários
+    DECISÃO DE NEGÓCIO PENDENTE: ✅ RECOMENDADA — doc 10 (auditoria) sugere registro obrigatório para conformidade
+    RECOMENDAÇÃO TÉCNICA: 💡 Registrar: usuário, data/hora, mudança de estado ACEITA→CANCELADA, justificativa, coleta_id, provider_id
+
+=====================================================================
+3. RECOMENDAÇÃO TÉCNICA
+=====================================================================
+
+14. QUESTÃO: Endpoint dedicado vs estender endpoint /cancelar existente
+   SITUAÇÃO ATUAL: /cancelar bloqueado para CLIENTE/SOLICITADA apenas; /status permite ACEITA→CANCELADA sem regras
+   REGRA EXISTENTE: ⚠️ Conflito — mesmo endpoint serve para propósitos diferentes (CLIENTE/SOLICITADA vs PRESTADOR/Admin/ACEITA)
+   DECISÃO DE NEGÓCIO PENDENTE: ❓ MANTER UNIDO OU SEPARAR?
+   RECOMENDAÇÃO TÉCNICA: 💡 **Opção B — Novo endpoint `/cancelar-apos-aceite`** (mais limpo):
+   - Mantém /cancelar inalterado (CLIENTE/SOLICITADA only)
+   - Novo endpoint aceita PRESTADOR/Admin/ACEITA com justificativa obrigatória
+   - Permite schema diferente (justificativa + opcional foto + idempotência desde o início)
+   - Evita quebrar regra atual de cliente/solicitada
+
+15. QUESTÃO: Armazenamento de dados — nova coluna em collections ou só audit_logs?
+   SITUAÇÃO ATUAL: AuditLog já suporta valor_anterior_json, valor_novo_json; tabela collections não tem campos de cancelamento
+   REGRA EXISTENTE: ⚠️ Definir o que armazenar permanentemente vs temporariamente
+   DECISÃO DE NEGÓCIO PENDENTE: ❓ CAMPOS NOVOS EM COLLECTIONS? (cancelado_por, justificativa_cancelamento, data_cancelamento)
+   RECOMENDAÇÃO TÉCNICA: 💡 Usar apenas audit_logs para histórico; se precisar de query frequente por status, adicionar colunas leves em collections (nullable, sem migration breaking)
+
+16. QUESTÃO: Notificação ao Cliente quando Prestador/Admin cancela ACEITA
+    SITUAÇÃO ATUAL: Não mencionado em nenhum documento; regra de negócio não definida
+    REGRA EXISTENTE: ❌ NÃO DEFINIDA — cliente pode ou não ser notificado?
+    DECISÃO DE NEGÓCIO PENDENTE: ❓ NOTIFICAÇÃO OBRIGATÓRIA AO CLIENTE?
+    RECOMENDAÇÃO TÉCNICA: 💡 Recomendado SIM — cancelamento após aceite afeta cliente; notificação via WhatsApp/Email/Sistema interno deveria ser acionada
+
+=====================================================================
+4. INCONSISTÊNCIA IDENTIFICADA
+=====================================================================
+
+17. QUESTÃO: Endpoint /cancelar bloqueia ACEITA mas /status permite tecnicamente a transição
+    SITUAÇÃO ATUAL: /cancelar (linha 425-426 em collections.py) valida status==SOLICITADA e bloqueia outro; TRANSICOES_VALIDAS["ACEITA"] inclui CANCELADA; /status (avancar_status) usa _stmt_avanco que respeita TRANSICOES_VALIDAS
+    REGRA EXISTENTE: ❌ INCONSISTÊNCIA — duas rotas com comportamentos diferentes para mesma transição
+    DECISÃO DE NEGÓCIO PENDENTE: ✅ JÁ IDENTIFICADA — necessidade de endpoint dedicado
+    RECOMENDAÇÃO TÉCNICA: 💡 A consistência exigirá decidir entre Opção A (estender /cancelar) ou Opção B (novo endpoint) — decisão de negócio definir qual caminho
+
+18. QUESTÃO: Implementação do cancelamento após aceite não exige justificativa nem valida role
+    SITUAÇÃO ATUAL: Endpoint /status (avancar_status) — schema AvancoStatusRequest só tem novo_status; não valida role PRESTADOR/ADMIN; não registra audit_log de cancelamento
+    REGRA EXISTENTE: ❌ INCONSISTÊNCIA — permite ACEITA→CANCELADA tecnicamente mas ignora regras: justificativa, role, auditoria
+    DECISÃO DE NEGÓCIO PENDENTE: ✅ JÁ IDENTIFICADA — necessidade de implementar validations
+    RECOMENDAÇÃO TÉCNICA: 💡 Quando definir endpoint dedicado, incluir: validação de role, exigência de justificativa, registro em audit_logs, validação de ownership
+
+19. QUESTÃO: Cancelamento ACEITA→CANCELADA sem as regras de negócio documentadas
+    SITUAÇÃO ATUAL: Teoricamente possível via /status; na prática, regras doc 05 (justificativa, Prestador/Admin) não são enforceadas
+    REGRA EXISTENTE: ❌ INCONSISTÊNCIA — regra existe no papel (doc 05) mas não no código (collections.py, schemas)
+    DECISÃO DE NEGÓCIO PENDENTE: ✅ JÁ IDENTIFICADA — fechar as regras é objetivo da Missão 42
+    RECOMENDAÇÃO TÉCNICA: 💡 Implementar após decisões de negócio: novo endpoint + schema com justificativa + validações + audit_log
+
+=====================================================================
+VALIDAÇÃO FINAL
+=====================================================================
+
+- ✅ Git status: will verify after save
+- ✅ Relatório criado: Relatorio_54.txt
+- ✅ Quantidade de decisões registradas: 19 itens (13 decisões originais + 6 derivações necessárias para consolidação)
+- ✅ Nenhum arquivo de código alterado
+- ✅ Nenhum teste modificado
+- ✅ Nenhum banco de dados alterado
+- ✅ Nenhuma migration criada
+- ✅ Nenhuma dependência alterada
+- ✅ Nenhuma documentação oficial modificada
+- ✅ Nenhuma refatoração realizada
+- ✅ Nenhum commit executado
+
+=====================================================================
+FIM DO RELATÓRIO 54
+=====================================================================

@@ -1,0 +1,436 @@
+RELATÓRIO 53 — ESPECIFICAÇÃO DO CANCELAMENTO APÓS ACEITE (MISSÃO 41)
+=====================================================================
+
+DATA: 2026-09-03
+MISSÃO: 41 — Análise e especificação do cancelamento ACEITA → CANCELADA
+MODO: APENAS ANÁLISE — NENHUM CÓDIGO ALTERADO
+
+=====================================================================
+1. ESTADO ATUAL
+=====================================================================
+- Git: Working tree clean (commit 036599f - VS_2.2)
+- Baseline: Flutter 206/206, Backend 188/188, analyze 0 issues
+- Arquitetura: Flutter → ApiService/Outbox → FastAPI → PostgreSQL
+- Código legado Firebase/Firestore: REMOVIDO (Missão 39)
+
+=====================================================================
+2. COMPORTAMENTO EXISTENTE — CANCELAMENTO ATUAL
+=====================================================================
+
+### Endpoint Atual
+- **Rota:** `POST /api/v1/collections/{coleta_id}/cancelar`
+- **Método HTTP:** POST
+- **Auth:** `Authorization: Bearer <JWT>`
+- **Role permitida:** `CLIENTE` (via `require_roles("CLIENTE")`)
+- **Body:** `{}` (vazio estrito — Pydantic `extra="forbid"`)
+- **Idempotência:** NÃO implementada (não aceita `X-Idempotency-Key`)
+- **Outbox:** NÃO utilizado (decisão arquitetural — Missão 37)
+
+### Validações no Backend (collections.py:411-429)
+1. Usuário autenticado com role CLIENTE
+2. Perfil Cliente existe (`_client_do_usuario`)
+3. Coleta existe e pertence ao cliente (`coleta.client_id == client.id`)
+4. **Estado obrigatório:** `coleta.status == "SOLICITADA"`
+5. Se estado ≠ SOLICITADA → HTTP 409: `Transição inválida a partir de {status}.`
+
+### Respostas
+- **200 OK:** `{"id": "<uuid>", "status": "CANCELADA"}`
+- **401:** Token inválido/ausente
+- **403:** Role ≠ CLIENTE
+- **404:** Coleta não encontrada ou não pertence ao cliente (anti-enumeração)
+- **409:** Estado atual ≠ SOLICITADA
+
+### Máquina de Estados Atual (TRANSICOES_VALIDAS)
+```python
+TRANSICOES_VALIDAS = {
+    "RASCUNHO": {"SOLICITADA"},
+    "SOLICITADA": {"ACEITA", "CANCELADA"},
+    "ACEITA": {"EM_DESLOCAMENTO", "CANCELADA"},  # ← CANCELADA listado mas NÃO implementado no endpoint
+    "EM_DESLOCAMENTO": {"EM_CONFERENCIA"},
+    "EM_CONFERENCIA": {"CARREGADA"},
+    "CARREGADA": {"FINALIZADA"},
+    "FINALIZADA": {"CONTESTADA"},
+    "CONTESTADA": set(),
+}
+```
+
+**Observação crítica:** O estado `ACEITA` tem `CANCELADA` em `TRANSICOES_VALIDAS`, mas o endpoint `/cancelar` atual **bloqueia** explicitamente qualquer estado ≠ SOLICITADA (linha 425-426).
+
+### Flutter — ApiService
+```dart
+Future<Map<String, dynamic>> cancelarColeta(String coletaId) async {
+  final resposta = await _post('/api/v1/collections/$coletaId/cancelar', '{}');
+  // Não envia X-Idempotency-Key
+  // Retorna {id, status}
+}
+```
+
+### Flutter — UI (TelaClienteMinhasColetas, TelaClienteResumoColeta)
+- Botão cancelar (ícone `cancel_outlined`) **aparece apenas se status == 'SOLICITADA'**
+- Confirmação via `AlertDialog` com texto "Confirmar cancelamento"
+- Bloqueio de duplo clique durante requisição
+- Tratamento de erros: 403, 404, 409, 422, rede
+
+### Testes Existentes
+- `test_17_cliente_cancela_proprias_solicitadas`: Cliente cancela SOLICITADA → 200, segunda tentativa → 409, prestador não consegue aceitar cancelada
+- Testes Flutter: cancelamento com sucesso, duplo clique bloqueado, 403, 404, 409, erro de rede
+
+=====================================================================
+3. REGRA ACEITA → CANCELADA — ANÁLISE
+=====================================================================
+
+### Documentação Encontrada
+
+**05_FLUXO_DA_COLETA.md (linha 13):**
+```
+ACEITA --> CANCELADA : Prestador/Admin cancela com justificativa
+```
+
+**03_REGRAS_DE_NEGOCIO.md:** Não menciona explicitamente cancelamento após aceite.
+
+**04_PERFIS_E_PERMISSOES.md (matriz):**
+- "Aceitar ou recusar solicitação": PRESTADOR ✅, ADMINISTRADOR ✅
+- Não há linha explícita para "Cancelar coleta aceita"
+
+**07_FINANCEIRO.md:** Não menciona cancelamento após aceite.
+
+**08_SEGURANCA.md:** Não menciona cancelamento.
+
+**10_ADMINISTRACAO_E_AUDITORIA.md:** Admin tem "Mediação de contestação de divergências" — não cancelamento explícito.
+
+**12_DECISOES_ARQUITETURAIS.md:** Não menciona cancelamento pós-aceite.
+
+### Comportamento do Endpoint `/status` (avancar_status)
+- Role: `PRESTADOR`
+- Permite transições definidas em `TRANSICOES_VALIDAS[coleta.status]`
+- Para `ACEITA`: permite `EM_DESLOCAMENTO` e `CANCELADA`
+- **Porém:** Não há schema/request para justificativa no `AvancoStatusRequest` (apenas `novo_status`)
+
+=====================================================================
+4. PERMISSÕES — QUEM PODE CANCELAR ACEITA
+=====================================================================
+
+| Perfil | Pode cancelar ACEITA? | Evidência |
+|--------|----------------------|-----------|
+| **CLIENTE** | NÃO DEFINIDO EXPLICITAMENTE | Endpoint atual só permite CLIENTE em SOLICITADA. Doc 05 diz "Prestador/Admin cancela com justificativa" — NÃO menciona Cliente. |
+| **PRESTADOR** | SIM (conforme doc 05) | Doc 05: "Prestador/Admin cancela com justificativa". `TRANSICOES_VALIDAS["ACEITA"]` inclui "CANCELADA". Endpoint `/status` permite PRESTADOR avançar para CANCELADA. |
+| **ADMINISTRADOR** | SIM (conforme doc 05) | Doc 05: "Prestador/Admin cancela com justificativa". Admin tem controle total (doc 04, 10). |
+
+**Conclusão:** 
+- **PRESTADOR** e **ADMINISTRADOR** são explicitamente mencionados no doc 05 como podendo cancelar ACEITA com justificativa.
+- **CLIENTE** NÃO é mencionado para cancelar ACEITA — apenas para cancelar SOLICITADA (implementado) e contestar FINALIZADA.
+- **REGRA PARCIALMENTE DEFINIDA** — faltam detalhes operacionais.
+
+=====================================================================
+5. JUSTIFICATIVA
+=====================================================================
+
+### Documentação
+**05_FLUXO_DA_COLETA.md (linha 13):** "Prestador/Admin cancela com justificativa"
+**03_REGRAS_DE_NEGOCIO.md (seção 3 - divergências):** Exige "justificativa fundamentada" + "pelo menos 1 foto" para divergências de quantidade.
+
+### Estado Atual do Código
+- Endpoint `/cancelar` atual: **NÃO exige justificativa** (body vazio `{}`)
+- Endpoint `/status` (avancar_status): **NÃO tem campo para justificativa** — apenas `novo_status`
+- Model `AvancoStatusRequest`: apenas `novo_status: Literal["EM_DESLOCAMENTO", "EM_CONFERENCIA", "CARREGADA"]`
+
+### Análise
+- Doc 05 exige justificativa para Prestador/Admin cancelar ACEITA
+- **NÃO HÁ IMPLEMENTAÇÃO** para receber/validar/armazenar justificativa
+- **REGRA NÃO DEFINIDA** em detalhes:
+  - Justificativa é obrigatória? (Doc 05 sugere SIM)
+  - Formato: texto livre? Código estruturado? Enum?
+  - Anexo de foto obrigatório? (Doc 03 §3 exige foto para divergências, mas cancelamento não é divergência)
+  - Validação de comprimento/mínimo?
+  - Armazenamento: onde? Nova coluna em `collections`? Tabela separada? `audit_logs`?
+
+=====================================================================
+6. IMPACTO FINANCEIRO
+=====================================================================
+
+### Documentação
+**07_FINANCEIRO.md:**
+- Snapshots imutáveis gravados apenas no encerramento (`FINALIZADA`) — campos `snapshot_valor_prestador`, `snapshot_valor_cliente`
+- Transações financeiras (`financial_transactions`) criadas no encerramento
+- "Alterações futuras na tabela de preços NUNCA afetam operações passadas ou coletas já finalizadas"
+
+### Estado Atual do Código
+- Coleta em `ACEITA`: **NÃO possui snapshot financeiro** (campos `nullable=True`)
+- Coleta em `ACEITA`: **NÃO possui transações financeiras** (criadas apenas em `FINALIZADA`)
+- Prestador já pode ter incorrido em custos (deslocamento, tempo)
+
+### Análise
+- **SEM IMPACTO FINANCEIRO DIRETO** no momento do cancelamento ACEITA → CANCELADA
+  - Não há snapshot de valor gravado
+  - Não há transação financeira criada
+  - Não há pagamento a estornar
+- **POSSÍVEL IMPACTO INDIRETO/OPERACIONAL:**
+  - Prestador pode ter custos de deslocamento não reembolsados
+  - Reputação do prestador pode ser afetada (doc 03 §6: "cancelamentos" compõem score)
+  - Cliente pode ter prejuízo operacional (atraso na coleta)
+
+**REGRA FINANCEIRA NÃO DEFINIDA** para cancelamento após aceite:
+- Existe multa/taxa para prestador que cancela após aceite?
+- Existe compensação para cliente?
+- Afeta reputação do prestador? (Como? Peso?)
+- Cliente pode ser penalizado se cancelar após aceite? (Não mencionado como permitido)
+
+=====================================================================
+7. MÁQUINA DE ESTADOS
+=====================================================================
+
+### Transições Definidas em TRANSICOES_VALIDAS
+```python
+"ACEITA": {"EM_DESLOCAMENTO", "CANCELADA"},
+```
+
+### Transições Pós-Aceite Atualmente Implementadas
+| De | Para | Implementado? | Endpoint | Role |
+|---|------|---------------|----------|------|
+| ACEITA | EM_DESLOCAMENTO | ✅ | `/status` | PRESTADOR |
+| ACEITA | CANCELADA | ❌ (bloqueado no /cancelar, permitido em /status sem justificativa) | `/status` | PRESTADOR |
+
+### Estados Pós-Aceita — Cancelamento Possível?
+| Estado | Pode cancelar? | Definido? |
+|--------|----------------|-----------|
+| ACEITA | Sim (Prestador/Admin) | Parcial (doc 05) |
+| EM_DESLOCAMENTO | NÃO DEFINIDO | `TRANSICOES_VALIDAS` não tem CANCELADA |
+| EM_CONFERENCIA | NÃO DEFINIDO | `TRANSICOES_VALIDAS` não tem CANCELADA |
+| CARREGADA | NÃO DEFINIDO | `TRANSICOES_VALIDAS` não tem CANCELADA |
+| FINALIZADA | NÃO (apenas CONTESTADA) | Definido: só CONTESTADA |
+| CONTESTADA | NÃO | Definido: terminal |
+
+**Conclusão:** A máquina de estados permite `ACEITA → CANCELADA` no dicionário, mas:
+1. Endpoint `/cancelar` bloqueia explicitamente
+2. Endpoint `/status` permitiria (via `TRANSICOES_VALIDAS`) mas não tem campo justificativa
+3. Estados posteriores a ACEITA **não têm CANCELADA como transição válida** no dicionário
+
+=====================================================================
+8. AUDITORIA
+=====================================================================
+
+### Auditoria Atual
+- Tabela `audit_logs`: registra `user_id`, `acao`, `entidade_afetada`, `entidade_id`, `valor_anterior_json`, `valor_novo_json`, `ip_origem`
+- Usada em: `contestar_coleta` (linha 771-780 em collections.py) — registra `CONTESTACAO_COLETA`
+- **Não usada** no cancelamento atual (SOLICITADA → CANCELADA)
+
+### Necessário para ACEITA → CANCELADA
+Para tornar rastreável, precisaria registrar:
+1. **Usuário responsável** (quem cancelou: Prestador ou Admin)
+2. **Data/hora UTC** (automático via `created_at` do audit_log)
+3. **Mudança de estado:** `{"status": "ACEITA"} → {"status": "CANCELADA"}`
+4. **Justificativa** (texto livre ou código + descrição)
+5. **Evidências** (se aplicável — fotos, documentos)
+6. **Contexto:** coleta_id, client_id, provider_id, valor estimado (se houver)
+
+### Modelo Atual (AuditLog)
+Suporta todos os campos necessários (`valor_anterior_json`, `valor_novo_json` como JSON).
+
+=====================================================================
+9. IDEMPOTÊNCIA / OFFLINE
+=====================================================================
+
+### Cancelamento Atual (SOLICITADA → CANCELADA)
+- **Idempotência:** NÃO implementada
+- **Outbox:** NÃO utilizado
+- **Motivo (Missão 37):** Endpoint não possui idempotência no backend
+- **Risco:** Duplo clique bloqueado no Flutter; se rede cair após sucesso, reenvio criaria erro 409 (já cancelado)
+
+### ACEITA → CANCELADA — Deveria ter Idempotência?
+**ANÁLISE:**
+- Cancelamento é operação **idempotente por natureza** (cancelar duas vezes = mesmo resultado)
+- Mas **sem chave de idempotência**, backend não distingue "reenvio legítimo" de "dupla submissão"
+- Se Prestador cancela offline (ex: no local, sem sinal), **precisa de Outbox + Idempotência**
+- Se Admin cancela via painel web (sempre online), idempotência menos crítica mas recomendada
+
+### Decisão Pendente
+- **IDEMPOTÊNCIA NÃO DEFINIDA** para cancelamento pós-aceite
+- Se implementar: novo endpoint ou estender `/cancelar` com `X-Idempotency-Key` + suporte a Prestador/Admin
+- Se usar Outbox: adicionar método `agendarCancelamentoColeta` no `OutboxService`
+
+=====================================================================
+10. IMPACTO NO FLUTTER
+=====================================================================
+
+### Telas Afetadas
+| Tela | Impacto |
+|------|---------|
+| `TelaClienteMinhasColetas` | Botão cancelar já existe — precisaria aparecer também para ACEITA se Cliente puder cancelar |
+| `TelaClienteResumoColeta` | Botão cancelar já existe — mesma lógica |
+| `TelaPrestadorMinhasColetas` | **NOVO:** Botão cancelar para coletas ACEITA (e possivelmente EM_DESLOCAMENTO) |
+| `TelaPrestadorDetalheColeta` | **NOVO:** Botão/ação cancelar |
+| `TelaAdmin` (futura) | **NOVO:** Ação cancelar em gestão de coletas |
+
+### ApiService
+- **Novo método** ou estender `cancelarColeta`:
+  ```dart
+  Future<Map<String, dynamic>> cancelarColetaAceita(String coletaId, {
+    required String justificativa,
+    String? fotoUrl,
+  })
+  ```
+- Se suportar Outbox: adicionar `agendarCancelamentoColeta` no `OutboxService`
+
+### Modelos
+- **Novo request model** para justificativa (ou estender existente)
+- **Novo response** pode incluir dados de auditoria
+
+### Testes
+- Novos testes para: Prestador cancela ACEITA, Admin cancela ACEITA, justificativa obrigatória, validações, erros
+
+=====================================================================
+11. IMPACTO NO BACKEND
+=====================================================================
+
+### Arquivos Provavelmente Afetados
+
+| Arquivo | Alteração Necessária |
+|---------|---------------------|
+| `backend/app/collections.py` | **Principal:** Novo endpoint ou estender `/cancelar` para aceitar Prestador/Admin + justificativa; adicionar auditoria |
+| `backend/app/schemas.py` (se existir) ou inline | Novo `CancelamentoAceitaRequest` com justificativa, fotos, etc. |
+| `backend/db/models/collection.py` | Possível: adicionar `cancelado_por`, `justificativa_cancelamento`, `data_cancelamento` |
+| `backend/db/models/audit.py` | Já suporta — apenas usar |
+| `backend/tests/test_collections.py` | Novos testes: Prestador cancela ACEITA, Admin cancela ACEITA, validações, auditoria |
+| `backend/app/rbac.py` | Verificar se `require_roles("PRESTADOR", "ADMINISTRADOR")` suficiente |
+
+### Regras de Negócio a Implementar
+1. Validar role: PRESTADOR (só suas coletas) ou ADMINISTRADOR (qualquer)
+2. Validar estado: apenas ACEITA (ou definir se EM_DESLOCAMENTO+ também)
+3. Exigir justificativa (obrigatória per doc 05)
+4. Registrar em `audit_logs`
+5. Se Prestador: verificar `coleta.provider_id == provider.id`
+6. Se Admin: permitir qualquer coleta ACEITA
+7. Retornar 409 se estado ≠ ACEITA (ou estados permitidos)
+8. Considerar impacto na reputação do prestador (doc 03 §6)
+
+=====================================================================
+12. DECISÕES PENDENTES
+=====================================================================
+
+## DECISÕES QUE PRECISAM SER TOMADAS ANTES DA IMPLEMENTAÇÃO
+
+1. **CLIENTE pode cancelar ACEITA?**
+   - Doc 05 menciona apenas "Prestador/Admin"
+   - Cliente atual só cancela SOLICITADA
+   - Decisão necessária: SIM ou NÃO
+
+2. **PRESTADOR pode cancelar ACEITA?**
+   - Doc 05: SIM com justificativa
+   - `TRANSICOES_VALIDAS` permite
+   - Endpoint `/status` permitiria tecnicamente
+   - **Confirmar:** SIM (já documentado)
+
+3. **ADMINISTRADOR pode cancelar ACEITA?**
+   - Doc 05: SIM com justificativa
+   - Admin tem controle total
+   - **Confirmar:** SIM (já documentado)
+
+4. **Justificativa é obrigatória?**
+   - Doc 05: "com justificativa" → sugere OBRIGATÓRIA
+   - Formato: texto livre? Enum de motivos? Mínimo de caracteres?
+   - **DECISÃO NECESSÁRIA**
+
+5. **Foto/evidência é obrigatória?**
+   - Doc 03 §3 exige para divergências de quantidade
+   - Cancelamento não é divergência
+   - **REGRA NÃO DEFINIDA**
+
+6. **Existe impacto financeiro / multa / taxa?**
+   - Prestador pode ter custos de deslocamento
+   - Reputação afetada (doc 03 §6)
+   - **REGRA FINANCEIRA NÃO DEFINIDA**
+
+7. **ACEITA → CANCELADA é a única nova transição de cancelamento?**
+   - `EM_DESLOCAMENTO`, `EM_CONFERENCIA`, `CARREGADA` também podem ser canceladas?
+   - `TRANSICOES_VALIDAS` atual: NÃO têm CANCELADA
+   - **DECISÃO NECESSÁRIA** para cada estado
+
+8. **Cancelamento terá idempotência (X-Idempotency-Key)?**
+   - Atual não tem
+   - Se Prestador cancela offline: PRECISA
+   - **DECISÃO NECESSÁRIA**
+
+9. **Deve gerar evento de auditoria obrigatório?**
+   - `audit_logs` existe e é usado para contestação
+   - **RECOMENDADO:** SIM (conformidade doc 10)
+   - **DECISÃO NECESSÁRIA** para confirmar
+
+10. **Dados a armazenar no cancelamento:**
+    - `cancelado_por` (user_id)
+    - `justificativa` (texto)
+    - `fotos_urls` (array, opcional/obrigatório?)
+    - `data_cancelamento` (timestamp)
+    - **DECISÃO NECESSÁRIA** se campos novos em `collections` ou só `audit_logs`
+
+11. **Notificação ao Cliente?**
+    - Se Prestador/Admin cancela ACEITA, Cliente deve ser notificado?
+    - **REGRA NÃO DEFINIDA**
+
+12. **Reputação do Prestador:**
+    - Cancelamento após aceite afeta score?
+    - Peso? Como registrar em `provider_reputation_events`?
+    - **REGRA NÃO DEFINIDA** (doc 03 §6: "cancelamentos" compõem score, mas sem fórmula)
+
+=====================================================================
+13. RECOMENDAÇÃO TÉCNICA
+=====================================================================
+
+### O Que Já Está Definido (Pronto para Implementar)
+✅ `TRANSICOES_VALIDAS` já inclui `"ACEITA": {"CANCELADA"}`
+✅ Doc 05 define: Prestador/Admin podem cancelar ACEITA com justificativa
+✅ Modelo `AuditLog` suporta registro completo
+✅ RBAC suporta `require_roles("PRESTADOR", "ADMINISTRADOR")`
+✅ Endpoint `/status` já usa `_stmt_avanco` que funciona para qualquer transição válida
+✅ Endpoint `/cancelar` existe como referência (padrão de resposta, erros)
+
+### O Que Está Indefinido (Precisa Decisão Antes de Codificar)
+❓ **Permissão do Cliente** para cancelar ACEITA (doc 05 não menciona)
+❓ **Formato da justificativa:** texto livre vs. enum vs. estruturado
+❓ **Foto obrigatória?** (Doc 03 só para divergências)
+❓ **Multa/taxa/compensação financeira** para cancelamento pós-aceite
+❓ **Estados além de ACEITA** que permitem cancelamento (EM_DESLOCAMENTO, etc.)
+❓ **Idempotência** obrigatória? (Para Outbox/Offline do Prestador)
+❓ **Campos de armazenamento:** nova coluna em `collections` ou só `audit_logs`?
+❓ **Notificação ao Cliente** automática?
+❓ **Impacto na reputação** — como registrar evento?
+
+### Recomendação de Implementação (Quando Decisões Forem Tomadas)
+
+**Opção A — Estender endpoint `/cancelar` existente:**
+```python
+@router.post("/{coleta_id}/cancelar")
+def cancelar_coleta(
+    coleta_id: str,
+    dados: CancelamentoRequest,  # NOVO: com justificativa, opcional foto
+    usuario: User = Depends(require_roles("CLIENTE", "PRESTADOR", "ADMINISTRADOR")),
+    x_idempotency_key: Optional[str] = Header(...),  # NOVO: idempotência
+):
+    # Lógica unificada: valida role + ownership + estado + justificativa
+    # Registra audit_log
+    # Retorna {id, status}
+```
+
+**Opção B — Novo endpoint dedicado `/cancelar-apos-aceite`:**
+- Mais limpo sem quebrar `/cancelar` atual (CLIENTE/SOLICITADA)
+- Permite schemas diferentes (justificativa obrigatória vs. body vazio)
+
+**Recomendação:** **Opção B** — separa responsabilidades, evita conflitos com regra atual de CLIENTE/SOLICITADA, permite idempotência desde o início.
+
+### Próximos Passos Sugeridos
+1. Reunião de decisão (Produto/Negócio) para resolver 12 decisões pendentes
+2. Atualizar documentos: 03, 05, 07, 10 com regras decididas
+3. Missão de implementação: Backend (endpoint + auditoria + testes) → Flutter (UI + ApiService + testes)
+4. Missão de idempotência/Outbox se decidida
+
+=====================================================================
+VALIDAÇÃO FINAL
+=====================================================================
+- ✅ Git status: clean
+- ✅ Nenhum arquivo de código alterado
+- ✅ Nenhum teste modificado
+- ✅ Nenhum arquivo existente removido
+- ✅ Apenas `Relatorio_53.txt` criado
+
+=====================================================================
+FIM DO RELATÓRIO 53
+=====================================================================

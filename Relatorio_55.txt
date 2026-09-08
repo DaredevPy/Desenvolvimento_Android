@@ -1,0 +1,186 @@
+RELATORIO 55 — ESTADO ATUAL DAS MISSOES E REGRAS DE CANCELAMENTO APOS ACEITE
+=====================================================================
+
+DATA: 2026-09-04
+MISSAO: 43 — Fechamento de especificacao do cancelamento ACEITA -> CANCELADA
+MODO: APENAS CONSOLIDACAO E STATUS — NENHUMA ALTERACAO DE CODIGO
+
+=====================================================================
+1. CONTEXTUALIZACAO DO PROJETO
+=====================================================================
+
+### Versao do Projeto
+- Versao atual: VS_2.2 (commit 036599f)
+- Arquitetura: Flutter/Dart -> ApiService/Outbox -> FastAPI/Python -> PostgreSQL
+- Perfis: CLIENTE, PRESTADOR, ADMINISTRADOR
+- Backend e autoridade absoluta das regras de negocio
+
+### Missoes Concluidas
+- Missao 41 (Relatorio_53.txt): Analise das 13 decisoes sobre CANCELAMENTO ACEITA -> CANCELADA
+- Missao 42 (Relatorio_54.txt): Consolidaçao das 13 decisoes identificadas (somente relatorio, nao implementacao)
+- Missao 43 (Relatorio_55.txt): Fechamento das regras e especyfikacao tecnica e de negocio (esta missao)
+
+### Missoes Anteriores Relevantes
+- Missao 39 (Relatorio_52.txt): Remocao segura de codigo legado Firebase/Firestore
+- Missao 40 (implícita): Auditoría de integridade pós-remocao
+- Missao 30 (Relatorio_41.txt): Fechamento do fluxo do prestador na conferencia (EM_CONFERENCIA -> CARREGADA)
+
+=====================================================================
+2. REGRAS JÁ DEFINIDAS E PRESERVADAS
+=====================================================================
+
+✅ Transição ACEITA → CANCELADA existe em TRANSICOES_VALIDAS["ACEITA"]
+✅ PRESTADOR pode cancelar coleta em ACEITA (doc 05 explicitado)
+✅ ADMINISTRADOR pode cancelar coleta em ACEITA (doc 05 e doc 04)
+✅ Cancelamento após ACEITA exige justificativa (doc 05: "com justificativa")
+✅ Endpoint /cancelar atual atende CLIENTE + SOLICITADA apenas
+✅ Estados posteriores (EM_DESLOCAMENTO, EM_CONFERENCIA, CARREGADA, FINALIZADA) NÃO têm CANCELADA definida em TRANSICOES_VALIDAS
+✅ Inconsistência identificada: /status permite tecnicamente ACEITA → CANCELADA sem aplicar regras específicas
+✅ Cancelamento não é divergência de quantidade; doc 03 §3 exige foto apenas para divergências
+
+=====================================================================
+3. DECISÕES PENDENTES DO RESPONSÁVEL (Missao 43)
+=====================================================================
+
+As seguintes 11 decisoes de negocio ainda dependem de resposta do responsavel pelo produto:
+
+#### DECISAO 1 — CLIENTE pode cancelar depois de ACEITA?
+Opções: A) SIM  |  B) NÃO
+Recomendacao tecnica: Opcao B (manter regra atual: CLIENTE so cancela SOLICITADA)
+
+#### DECISAO 2 — Justificativa e obrigatoria?
+Opcoes: A) SIM (obrigatoria)  |  B) NÃO (opcional)
+Recomendacao tecnica: A) Obrigatoria (alinhado com doc 05)
+
+#### DECISAO 3 — Formato da justificativa?
+Opcoes: A) Texto livre  |  B) Enum de motivos  |  C) Estruturado
+Recomendacao tecnica: A) Texto livre (mais simples para inicio)
+
+#### DECISAO 4 — Foto/evidencia obrigatoria?
+Opcoes: A) SIM (foto Obrigatoria)  |  B) NÃO (opcional)  |  C) N/A (nao e divergencia)
+Recomendacao tecnica: C) N/A / nao obrigatoria (cancelamento diferente de divergencia)
+
+#### DECISAO 5 — Existe multa, taxa ou compensacao financeira?
+Opcoes: A) SIM (multa/taxa para PRESTADOR)  |  B) SIM (compensacao para CLIENTE)  |  C) NENHUMA
+Recomendacao tecnica: C) Nenhuma (evita complicar regra de valores desacoplados)
+
+#### DECISAO 6 — Quais estados podem ser cancelados alem de ACEITA?
+Opcoes: A) APENAS ACEITA  |  B) ACEITA + EM_DESLOCAMENTO  |  C) Todos os estados pre-FINALIZADA
+Recomendacao tecnica: A) APENAS ACEITA (consistente com TRANSICOES_VALIDAS)
+
+#### DECISAO 7 — Cancelamento tera idempotencia?
+Opcoes: A) SIM (obrigatoria)  |  B) NÃO (nao necessaria)  |  C) SIM (se prestador offline)
+Recomendacao tecnica: A) SIM (obrigatoria — resiliencia offline e Outbox)
+
+#### DECISAO 8 — Cancelamento deve gerar auditoria?
+Opcoes: A) SIM (obrigatorio)  |  B) NÃO (opcional)  |  C) SIM (com dados completos)
+Recomendacao tecnica: C) SIM — com dados completos (conformidade doc 10)
+
+#### DECISAO 9 — Onde os dados do cancelamento devem ser armazenados?
+Opcoes: A) Apenas audit_logs  |  B) collections (novas colunas) + audit_logs  |  C) Tabela separada
+Recomendacao tecnica: B) Em collections (colunas nullable) + audit_logs
+
+#### DECISAO 10 — Deve haver notificacao ao CLIENTE?
+Opcoes: A) SIM (obrigatoria)  |  B) NÃO  |  C) SIM (condicional)
+Recomendacao tecnica: A) SIM (obrigatoria — cliente tem direito a saber)
+
+#### DECISAO 11 — O cancelamento afeta a reputacao do PRESTADOR?
+Opcoes: A) SIM (afeta diretamente)  |  B) SIM (afeta indiretamente)  |  C) NÃO (nao afeta)
+Recomendacao tecnica: B) SIM (afeta indiretamente — contribui para score, sem formula definida)
+
+=====================================================================
+4. RECOMENDAÇÕES E PROPOSTA DE REGRAS — AGUARDANDO APROVAÇÃO
+=====================================================================
+
+⚠️ IMPORTANTE: Esta seção contém apenas recomendações — ainda não aprovadas pelo responsável pelo projeto.
+
+⚠️ NENHUMA dessas decisões deve ser tratada como regra definitiva até confirmação formal.
+
+⚠️ Nenhuma implementação backend ou frontend deve utilizar estas decisões como base oficial ainda.
+
+As recomendações abaixo são apresentadas para deliberação do responsável, não como regras estabelecidas:
+
+1. ACEITA -> CANCELADA e validação de transição de estado
+   -- Observação: regra existe em TRANSICOES_VALIDAS; confirmação do responsável necessária para definir se é a única transição permitida ou se outros estados também podem ser cancelados.
+
+2. Apenas PRESTADOR e ADMINISTRADOR podem cancelar em ACEITA
+   -- Observação: regra documentada em doc 05; confirmação do responsável necessária (decisão pendente: DECISAO 1 sobre CLIENTE cancelar ACEITA).
+
+3. Justificativa OBRIGATORIA (texto livre, mínimo 10 caracteres)
+   -- Observação: alinhado com doc 05; porém depende da DECISAO 2 (justificativa é obrigatória?) e DECISAO 3 (formato: texto livre / enum / estruturado).
+
+4. Foto/evidência NÃO é obrigatória (diferente de divergência)
+   -- Observação: cancelamento é diferente de divergência de quantidade (doc 03 §3); depende da DECISAO 4 (foto é obrigatória?).
+
+5. Nenhuma multa/taxa financeira direta (apenas impacto reputacional)
+   -- Observação: evita complicar regra de valores desacoplados (doc 03 §2 e doc 07); depende da DECISAO 5 (multa/taxa/compensação?).
+
+6. Apenas estado ACEITA pode ser cancelado (outros estados têm fluxos distintos)
+   -- Observação: consistente com TRANSICOES_VALIDAS atual; depende da DECISAO 6 (quais estados podem cancelar além de ACEITA?).
+
+7. Cancelamento deve ter idempotência (X-Idempotency-Key UUIDv4)
+   -- Observação: recomendado para resiliência offline e Outbox; depende da DECISAO 7 (idempotência obrigatória?).
+
+8. Cancelamento gera auditoria obrigatória em audit_logs (user, data, estado_antigo, estado_novo, justificativa, coleta_id)
+   -- Observação: conformidade com doc 10; depende da DECISAO 8 (cancelamento gera auditoria?).
+
+9. Dados armazenados em collections (cancelado_por, justificativa_cancelamento, data_cancelamento) + audit_logs
+   -- Observação: facilita query por status de cancelamento; depende da DECISAO 9 (onde armazenar dados?).
+
+10. Notificação obrigatória ao CLIENTE quando Prestador/Admin cancela ACEITA
+    -- Observação: doc 03 §5 recomenda notificações externas; depende da DECISAO 10 (notificação ao cliente?).
+
+11. Cancelamento afeta indiretamente reputação do PRESTADOR (contribui para score)
+    -- Observação: doc 03 §6 diz "cancelamentos compõem score" sem fórmula definida; depende da DECISAO 11 (afeta reputação do prestador?).
+
+=====================================================================
+IMPORTANTE: NENHUMA dessas 11 decisões deve ser tratada como regra definitiva.
+Nenhuma implementação backend ou frontend deve utilizar estas decisões como base oficial
+até que seja feita a confirmação formal pelo responsável do projeto.
+Aguardar aprovação expressa antes de prosseguir com qualquer código, teste ou migration.
+=====================================================================
+
+=====================================================================
+5. STATUS ATUAL DO GIT
+=====================================================================
+
+Arquivos modificados nesta sessao:
+- Relatorio_55.txt (correcao da secao 4 — relatorio atualizado)
+
+Arquivos ja existentes (nao alterados por esta missao):
+- Relatorio_53.txt (Missao 41 - analise original)
+- Relatorio_54.txt (Missao 42 - consolidacao das 13 decisoes)
+- Relatorio_52.txt (Missao 39 - remocao de legado)
+- .gitignore (modificacao preexistente)
+- Build caches (modificacoes preexistentes)
+
+Nenhum codigo, teste, banco, dependencia ou documentacao oficial foi alterado.
+Apenas o arquivo Relatorio_55.txt foi corrigido (secao 4 reescrita).
+
+=====================================================================
+7. PROXIMAS ETAPAS
+=====================================================================
+
+### Aguardando decisoes do responsavel
+1. Responder as 11 decisoes pendentes (Decisao 1 a 11 acima)
+2. Confirmar ou ajustar recomendacoes tecnicas
+3. Definir prazo para definicao de formula de reputacao (se decidido B na Decisao 11)
+
+### Apos decisoes confirmadas
+4. Gerar especificacao definitiva final (formatacao solicitada)
+5. Missao de implementacao: Backend (endpoint + auditoria + testes)
+6. Missao de implementacao: Frontend (API + UI + testes)
+7. Missao de idempotencia/Outbox se decisao 7 confirmada
+
+### Prioridade de executar (apos decisoes)
+1. Funcionamento (fluxo operacional)
+2. Regras de negocio (definidas pelas 11 decisoes)
+3. Seguranca (validacoes de role, justificativa, auditoria)
+4. Consistencia dos dados (audit_logs + collections)
+5. Testes (unitarios e integracao)
+6. Arquitetura/manutenibilidade (endpoint dedicado vs extensao)
+7. Estetica (UI do cancelamento)
+
+=====================================================================
+FIM DO RELATORIO 55
+=====================================================================

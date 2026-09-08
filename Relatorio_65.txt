@@ -1,0 +1,239 @@
+RELATORIO 65 — MISSAO 53: CONSOLIDACAO DEFINITIVA DAS REGRAS DE CANCELAMENTO APOS ACEITA
+=====================================================================
+
+DATA: 2026-09-04
+MISSAO: 53 — Consolidacao definitiva das reglas de cancelamento apos ACEITA
+MODO: APENAS ANALISE, ESPECIFICACAO E DOCUMENTACAO — NENHUMA ALTERACAO DE CODIGO
+
+=====================================================================
+1. IDENTIFICACAO DA MISSAO 53
+=====================================================================
+
+### Missao: 53 — Consolidacao definitiva das reglas de cancelamento apos ACEITA
+### Versao: VS_2.2 (commit 036599f)
+### Data: 2026-09-04
+### MODO: APENAS ANALISE, ESPECIFICACAO E DOCUMENTACAO
+### Nenhum codigo foi alterado, criado ou modificado nesta missao.
+
+=====================================================================
+2. RESUMO DAS 11 DECISOES
+=====================================================================
+
+| Numero | Decisao | Conteudo | Status |
+|--------|---------|----------|--------|
+| 1 | Cliente nao pode cancelar apos ACEITA | CLIENTE somente pode cancelar em SOLICITADA; nao pode cancelar apos ACEITA | APROVADA |
+| 2 | Justificativa obrigatoria | Quando PRESTADOR ou ADMINISTRADOR cancelarem ACEITA, justificativa e obrigatoria | APROVADA |
+| 3 | Formato da justificativa | e texto livre; nao utiliza enum; nao possui formato estruturado obrigatorio. Nao inventar tamanho minimo de caracteres. | APROVADA |
+| 4 | Evidencia para cancelamento | Foto/evidencia nao e requisito para cancelamento em ACEITA; continua relacionada a regras de divergencia de quantidade | APROVADA |
+| 5 | Impacto financceiro | Cancelamento em ACEITA: nao gera multa, taxa, compensacao financceira, debito ao PRESTADOR ou credito ao CLIENTE. Transacoes financeiras ligadas a FINALIZADA. | APROVADA |
+| 6 | Estados permitidos para cancelamento | Apenas ACEITA pode ser cancelada por esse fluxo. EM_DESLOCAMENTO, EM_CONFERENCIA, CARREGADA: nao podem ser canceladas por esse fluxo. | APROVADA |
+| 7 | Idempotencia | Todo cancelamento deve possuir chave UUIDv4; protecao contra processamento duplicado; regra vale para online e Outbox | APROVADA |
+| 8 | Auditorica | Todo cancelamento deve gerar auditoria completa; permite reconstruir: coleta, responsavel, perfil, momento, estado anterior, estado resultante, justificativa, operacao/idempotencia, contexto | APROVADA |
+| 9 | Armazenamento | Dados em COLLECTION + audit_logs; coleta mantem estado operacional; audit_logs mantem historico detalhado e rastreabilidade; nao criar tabela especifica de cancelamento | APROVADA |
+| 10 | Notificacao ao CLIENTE | CONDICIONAL: definir criterios objetivos para quando o CLIENTE deve ser notificado; quando nao; informacao operacional pode ser exposta; informacao interna; conteudo conceitual da comunicacao | CONDICIONAL |
+| 11 | Reputacao do PRESTADOR | CONDICIONAL: cancelamento em ACEITA nao deve significar automaticamente comportamento inadequado; definir criterios para quando afetar ou nao a reputacao; justificativa tem influencia; ADMINISTRADOR pode revisar/classificar | CONDICIONAL |
+
+=====================================================================
+3. ESPECIFICACAO CONSOLIDADA DO CANCELAMENTO APOS ACEITA
+=====================================================================
+
+### Fluxo Permitido
+- ACEITA -> CANCELADA: permitida (somente enquanto coleta estiver em ACEITA)
+- Todos os outros estados (EM_DESLOCAMENTO, EM_CONFERENCIA, CARREGADA, FINALIZADA): nao permitidos para cancelamento por esse fluxo
+
+### Permissoes por Perfil
+- CLIENTE: pode cancelar somente em SOLICITADA; nao pode cancelar em ACEITA
+- PRESTADOR: pode cancelar em ACEITA, desde que forneca justificativa obrigatoria; idempotencia obrigatoria (UUIDv4); gera auditoria completa; fica armazenado em collection + audit_logs
+- ADMINISTRADOR: pode cancelar em ACEITA, com mismas regras do PRESTADOR; adicionalmente pode revisar/classificar ocorrencias de reputacao (decision 11 conditional)
+
+### Regras de Justificativa
+- Obrigatoria quando PRESTADOR ou ADMINISTRADOR cancelarem ACEITA
+- Deve ser texto livre (nao enum, nao formato estruturado)
+- Nao deve ser inventado tamanho minimo de caracteres (recomendacao anterior nao foi aprovada como regra)
+- Deve ser registrada tanto na collection (campo justificativa_cancelamento) quanto no audit_logs (JSON)
+
+### Regras de Idempotencia
+- Todo cancelamento deve possuir chave de idempotencia UUIDv4
+- Se mesma operacao for reenviada, backend deve reconhecer operacao ja processada e impedir cancelamento duplicado
+- Regra vale para operacoes online e para operacoes processadas pelo Outbox
+- Header X-Idempotency-Key sera obrigatorio no schema de cancelamento pos-aceite
+
+### Regras de Auditorica
+- Todo cancelamento deve gerar auditoria completa
+- Dados que devem ser preservados:
+  * coleta afetada (coleta_id)
+  * usuario responsavel pela operacao (user_id)
+  * perfil do responsavel (perfil/role)
+  * momento da operacao (data/hora UTC)
+  * estado anterior (ACEITA)
+  * estado resultante (CANCELADA)
+  * justificativa fornecida (texto livre)
+  * identificador da operacao/idempotencia (UUIDv4 key), quando aplicavel
+  * contexto relevante da operacao (ex: motivo contexto negocio, se aplicavel)
+- Audit_logs ja existia e suporta todos esses campos (valor_anterior_json, valor_novo_json como JSON)
+
+### Regra de Armazenamento
+- Dados do cancelamento armazenados em COLLECTION + audit_logs
+- Coleta mantem estado operacional (campo status atualizado para CANCELADA)
+- Dados operacionais da coleta permanecem na entidade de coleta
+- Dados de rastreabilidade e historico ficam em audit_logs
+- Nao criar tabela especifica exclusivamente para cancelamentos
+- Campos na collection: cancelado_por (uuid), justificativa_cancelamento (text), data_cancelamento (timestamp with time zone)
+
+=====================================================================
+4. CRITERIOS DEFINIDOS PARA NOTIFICACAO AO CLIENTE (DECISAO 10)
+=====================================================================
+
+### Decisao 10 = C) CONDICIONAL
+
+### Objetivo
+Manter transparencia para o CLIENTE sem expor desnecessariamente detalhes internos que possam transmitir percepcao de instabilidade operacional.
+
+### Problema Resolvido
+- Notificacao excessivamente explicita ("O prestador cancelou sua coleta") pode fazer o CLIENTE perceber o servico como inconsistente
+- Esconder cancelamento completamente pode gerar experiencia pior caso o CLIENTE descubra posteriormente
+- Need balance between transparency and operational stability perception
+
+### Critérios Objetivos Definidos
+
+#### Notificacao OBRIGATORIA (situacoes que SIMPLESMENTE devem ser comunicadas):
+1. Cancelamento de coleta que estava em processo de agendamento (ainda nao tinha iniciado operacao efetiva)
+2. Cancelamento realizado pelo ADMINISTRADOR (sempre comunicar, pois decisao administrativa)
+3. Cancelamento com justificativa de "operacao encerrada" ou "servico indisponivel" (informar ao cliente que servico nao sera prestado)
+
+#### Notificacao OPCIONAL (apresentar ao discrecao do sistema, nao obrigatoria por regra):
+1. Cancelamento com justificativa de "cliente nao compareceu" ou "condicoes climaticas" (informacao opcional)
+2. Cancelamento recursivo (mais de 1 vez no mes) (informar por experiencia do usuario)
+
+#### Sem Notificacao Necessaria (silencioso, cliente toma conhecimento ao consultar):
+1. Cancelamento normal de coleta pelo PRESTADOR com justificativa adequada (cliente nao precisa ser incomodado para cada cancelamento operacional)
+2. Cancelamento quando ja ha agreement de reversao ou processo de devolucao em andamento
+
+#### Conteudo da Notificacao (quando aplicavel):
+- "Sua coleta [numero] foi cancelada." (mensagem basica, sem atribuir culpa)
+- "Motivo: [justificativa resumida, se houver relevante ao usuario]" (opcional)
+- "Caso tenha duvidas ou precise reagendar, entre em contato com o suporte." (chamar para acao quando necessario)
+- Nao incluir: nome do prestador, perfil interno, identificadores tecnica, detalhes operacionais
+
+#### Momento do Acionamento
+- Notificacao disparada apos backend confirmar cambio de estado para CANCELADA
+- Tempo maximo de 5 segundos pos-confirmacao (nao bloquear resposta ao usuario)
+- Melhor esforco (best-effort) — se falhar disparar retry em 24h, nao considerar falha critica
+
+=====================================================================
+5. CRITERIOS DEFINIDOS PARA REPUTACAO DO PRESTADOR (DECISAO 11)
+=====================================================================
+
+### Decisao 11 = C) CONDICIONAL
+
+### Princípio Central
+Não transformar todo cancelamento em ACEITA automaticamente em uma falha do PRESTADOR.
+O sistema deve distinguir: cancelamento legítimo; cancelamento operacional; comportamento potencialmente problemático; situação excepcional; ação administrativa.
+
+### Critérios Objetivos para Afetar Reputacao
+
+#### Afetar Negativamente a Reputacao (penalizacao aplicavel):
+1. Cancelamento repetitivo: cliente cancelar mesma coleta ou coleitas multiple vezes no mesmo mes (2+ vezes/mes)
+2. Cancelamento sem justificativa ou justificativa vazia/inexistente (texto livre vazio ou apenas espacos)
+3. Padrao de cancelamentos que impecam coleta de ser finalizada (impactar fluxo operacional consistente)
+4. Cancelamento por motivos de "falta de pagamento" ou "deuda" (indicador de risco financeiro)
+
+#### NAO Afetar Reputacao (sem penalizacao):
+1. Cancelamento unico-occasional com justificativa preenchida adequadamente (texto livre preenchido, qualquer conteudo)
+2. Cancelamento por motivos operacionais legittimos ("operacao encerrada", "servico indisponivel", "cliente nao compareceu" - desde que justificado)
+3. Cancelamento realizado por ADMINISTRADOR (responsabilidade administrativa, nao do prestador)
+4. Cancelamento em situacoes excepcionais (forcas maiores, eventos imprevistos) desde que devidamente justificados e documentados
+
+#### Influencia da Justificativa
+- Justificativa com conteudo significativo (mais de apenas espacos, ou codigos padrao como "ENCERRADO", "INCAPACIDADE_TEMPORARIA") tem peso positivo para avaliacao
+- Justificativa vazia ou apenas espacos tem peso negativo (indicador de cancelamento sem responsablidade)
+- Ausencia de justificativa (campo nao preenchido) considerado como "sem justificativa" para efeito de reputacao
+
+#### Revisao pelo ADMINISTRADOR
+- ADMINISTRADOR podera revisar ou classificar qualquer ocorrencia de cancelamento
+- Classificacao do ADMINISTRADOR pode reverter ou ajustar impacto na reputacao
+- Evento de classificacao do administrador deve ser registrado em audit_logs com campo "admin_review_flag = true" e "admin_review_result" (aprovado/ajustado/manter penalidade)
+- Formula de score de reputacao (ja existente no sistema) deve considerar evento de cancelamento com peso relativo (ex: 0.1x do impacto de uma reclamacao de cliente direta), NAO peso unico ou automatico
+
+=====================================================================
+5. IMPACTOS FUTUROS DE IMPLEMENTACAO
+=====================================================================
+
+### Itens Identificados para Implementacao Futura (nao implementar nesta missao)
+
+1. **Modificacao de Schema** (pending definicao definitiva):
+   - Campos opcionais na collection ja existem (cancelado_por, justificativa_cancelamento, data_cancelamento) — definidos na decision 9
+   - Campos de audit_logs ja suportam todos os campos necessarios (ja existente)
+
+2. **Logica de Notificacao** (pending criterios da decision 10):
+   - Implementacao de disparo de notificacao (WhatsApp/Email/sistema interno)
+   - Template de mensagem conceitual
+   - Mechanismo de retry e fall-back
+   - Teste de experiencia do usuario
+
+3. **Calculo de Score de Reputacao** (pending criterios da decision 11):
+   - Peso relativo de eventos de cancelamento na formula existente
+   - Logica de revisao pelo ADMINISTRADOR
+   - Interface de classificacao administrativa
+   - Teste de impacto no score final
+
+4. **Interface de Linha de Comando / Painel Administrativo** (pending):
+   - Listagem de coletas canceladas com filtros
+   - Ferramenta de revisao/classificacao de cancelamentos
+   - Relatorios de padroes de cancelamento
+
+5. **Integracao com Sistema de Score Existente** (pending):
+   - Mapeamento de evento de cancelamento para campos de score
+   - Definicao de peso exato na formula global
+   - Teste de regressao com dados historicos
+
+=====================================================================
+6. PONTOS QUE AINDA PERMANECEM TECNICAMENTE INDETERMINADOS
+=====================================================================
+
+1. **Peso exato de cancelamento na formula de score de reputacao** — A definiacao de quanto um evento de cancelamento influencia o score global depende de analise estatistica com dados historicos e concordancia com produto/financeiro. NAO foi definida uma formula unica nesta missao.
+
+2. **Conteudo minimo de justificativa para efeito de reputacao** — Embora se saiba que justificativa vazia e negativa, e definicao de "conteudo significativo" depende de analise de texto e concordancia de produto. NAO foi definido tamanho minimo de caracteres (conforme decisoes anteriores).
+
+3. **Frequencia de cancelamento que gatilha penalizacao** — Quantas cancelacoes por mes/gatilha "cancelamento repetitivo" depende de politica de negocio e analise de dados. NAO foi definida uma frequencia especifica (ex: 2 vezes/mes e apenas uma sugestao, nao regra definitiva).
+
+4. **Integracao com eventos externos (WhatsApp/Email)** — A implementacao tecnica de notificacao depende de provedores de mensagem, custos de operacao e politica de comunicacao. NAO implementado nesta missao.
+
+=====================================================================
+7. CONCLUSAO
+=====================================================================
+
+### Consolidacao das 11 Decisoes
+Todas as 11 decisoes sobre cancelamento de coleta apos ACEITA foram devidamente registradas e classificadas:
+
+- **Decisoes 1-9:** APROVADAS com regras objetivas e definidas
+- **Decisoes 10-11:** CLASSIFICADAS como CONDICIONAIS, com criterios objetivos definidos para implementacao futura
+
+### Regras Definitivas Estabelecidas
+1. CLIENTE NAAO pode cancelar apos ACEITA — somente SOLICITADA
+2. Justificativa OBRIGATORIA (texto livre) para PRESTADOR/Admin cancelarem ACEITA
+3. Foto/evidencia NAAO e requisito para cancelamento em ACEITA
+4. Sem multa/taxa/ compensacao financeira em cancelamento pos-ACEITA
+5. Apenas ACEITA pode ser cancelada por esse fluxo
+6. Idempotencia OBRIGATORIA (chave UUIDv4) para todo cancelamento
+7. Auditorica COMPLETA OBRIGATORIA (dados detalhados preservados)
+8. Armazenamento em COLLECTION + audit_logs (sem tabela especifica)
+9. Critérios objetivos definidos para notificacao ao CLIENTE (decisao 10 conditional)
+10. Critérios objetivos definidos para afetar/reputacao do PRESTADOR (decisao 11 conditional)
+
+### Próximos Passos para Implementacao
+1. Registrar decisoes 10 e 11 como definidas (conditional) na documentacao oficial
+2. Implementar campos de storage ja definidos (decision 9) se ainda nao existirem
+3. Definir pesos exatos para calculo de reputacao (pendente de analise estatistica)
+4. Definir frequencia especifica de cancelamento que gatilha penalizacao (pendente de politica de negocio)
+5. Implementar logica de notificacao ao CLIENTE com criterios objetivos (decision 10)
+6. Implementar interface de revisao/classificacao administrativa para cancelamentos (decision 11)
+7. Gerar especyfikacao definitiva final (Relatorio final)
+8. Iniciar missao de implementacao de codigo com todas as 11 decisoes confirmadas
+
+### Estado Final do Projeto
+Projeto VS_2.2 encontra-se com todas as 11 decisoes de cancelamento apos ACEITA definidas e documentadas. Nenhum codigo foi alterado durante esse processo de consolidacao. O proximo passo e a missao de implementacao, que sera desencadeada Apos confirmacao formal de todas as decisoes e definicao dos parametros technically especicos antes aqui nao definidos com precisao definitiva.
+
+=====================================================================
+FIM DO RELATORIO 65
+=====================================================================

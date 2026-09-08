@@ -1,0 +1,251 @@
+RELATORIO 63 — MISSAO 51: REGISTRO DA DECISAO 8 + APRESENTACAO DA DECISAO 9
+=====================================================================
+
+DATA: 2026-09-04
+MISSAO: 51 — Registro da Decisao 8 + apresentacao da Decisao 9
+MODO: APENAS REGISTRO E APRESENTACAO — NENHUMA ALTERACAO DE CODIGO
+
+=====================================================================
+1. MISSAO 51 — REGISTRO DA DECISAO 8 + APRESENTACAO DA DECISAO 9
+=====================================================================
+
+=====================================================================
+2. DECISAO 1 — CONFIRMADA (DE MISSAO 45)
+=====================================================================
+
+### DECISAO 1 = B) CLIENTE NÃO pode cancelar após ACEITA
+- Registrada como APROVADA pelo responsavel
+- CLIENTE somente pode cancelar quando a coleta estiver em SOLICITADA
+- apos ACEITA, o cancelamento pelo CLIENTE nao e permitido
+- Fluxo confirmado: CLIENTE -> SOLICITADA -> (ACEITA/PRESTADOR) -> (somente PRESTADOR/Admin podem cancelar)
+- Nenhuma alteracao de codigo necessaria (regra ja existia implicitamente)
+
+=====================================================================
+3. DECISAO 2 — APROVADA (MISSAO 46)
+=====================================================================
+
+### DECISAO 2 = A) SIM — Justificativa e Obrigatoria
+- Justificativa para cancelamento de uma coleta no estado ACEITA e OBRIGATORIA
+- Aplica-se a PRESTADOR ou ADMINISTRADOR que cancelarem uma coleta em ACEITA
+- O responsavel confirmou: a justificativa e obrigatoria para esse cenario
+- Contexto documentado: Doc 05 (linha 13) ja estabelecia "Prestador/Admin cancela com justificativa"
+- Agora formalizada como regra oficial: PRESTADOR ou ADMINISTRADOR que cancelarem ACEITA devem obrigatoriamente fornecer uma justificativa
+
+=====================================================================
+4. DECISAO 3 — APROVADA (MISSAO 46)
+=====================================================================
+
+### DECISAO 3 = A) TEXTO LIVRE
+- A justificativa sera um campo de TEXTO LIVRE
+- O responsavel confirmou: o campo aceite texto livremente, sem enum nem formato estruturado obligatorio
+- Flexibilidade para o usuario explanar o motivo do cancelamento sem restricoes de escolha multipla
+
+=====================================================================
+5. DECISAO 4 — CONFIRMADA (MISSAO 47)
+=====================================================================
+
+### DECISAO 4 = C) N/A — Foto/evidencia nao se aplica ao cancelamento em ACEITA
+- Foto/evidencia NAAO se aplica ao cancelamento de uma coleta no estado ACEITA
+- A fotografia/evidencia continua relacionada alle regras de divergencia de quantidade ja existentes
+- Nao deve ser transformada em requisito para cancelamento
+- Confirmacao formal: cancelamento e operacao administrativa diferente de processo de conferencia fisica que exige fotografia
+
+=====================================================================
+6. DECISAO 5 — CONFIRMADA (MISSAO 47)
+====================================================================-
+
+### DECISAO 5 = C) NAAO — Na existe multa, taxa ou compensacao financeira decorrente do cancelamento em ACEITA
+- Na existe multa, taxa ou compensacao financeira decorrente do cancelamento em ACEITA
+- O cancelamento posterior-aceite nao deve gerar debito ao PRESTADOR nem credito/compensacao financeira ao CLIENTE
+- Reafirmacao da regra de valores desacoplados: valores cobrados do cliente sao 100% desacoplados dos valores pagos ao prestador (doc 03 §2)
+- Transacoes financeiras srioo sao lancadas no encerramento (FINALIZADA), nao em cancelamentos intermediarios
+
+=====================================================================
+7. DECISAO 6 — CONFIRMADA (MISSAO 48)
+====================================================================-
+
+### DECISAO 6 = A) APENAS ACEITA
+- O cancelamento pos-aceite so e permitido enquanto a coleta estiver em ACEITA
+- Depois que sair de ACEITA (para EM_DESLOCAMENTO, EM_CONFERENCIA ou CARREGADA), nao pode mais ser cancelada por esse fluxo
+- A transicao CANCELADA permanece disponivel somente a partir de ACEITA na TRANSICOES_VALIDAS
+- Confirmacao formal: apenas o estado ACEITA pode ser cancelado por esse fluxo; estados subsequentes necessitam de outras abordagens (contestacao, devolucao, etc.)
+
+=====================================================================
+8. DECISAO 7 — CONFIRMADA (MISSAO 49)
+====================================================================-
+
+### DECISAO 7 = A) SIM — IDEMPOTÊNCIA OBRIGATÓRIA
+- Toda operação de cancelamento deve ser protegida contra processamento duplicado
+- A operação deverá utilizar uma chave de idempotência UUIDv4
+- Se a mesma operação for reenviada, o backend deverá reconhecer a operação já processada e impedir que o cancelamento seja executado novamente como uma nova operação
+- A regra vale tanto para operações online quanto para operações que eventualmente sejam processadas através do Outbox
+
+=====================================================================
+9. DECISAO 8 — CONFIRMADA (MISSAO 50)
+====================================================================-
+
+### DECISAO 8 = C) SIM — AUDITORIA COMPLETA OBRIGATÓRIA
+- Todo cancelamento deverá gerar uma auditoria completa da operação
+- A auditoria deverá preservar informações suficientes para reconstruir posteriormente:
+  * o que aconteceu
+  * qual coleta foi afetada
+  * quem realizou a operação
+  * qual era o perfil do responsável
+  * quando ocorreu
+  * qual era o estado anterior
+  * qual foi o estado resultante
+  * qual justificativa foi fornecida
+  * qual operação/idempotência estava associada, quando aplicavel
+  * o contexto relevante da operação
+
+=====================================================================
+10. DECISAO 9 — APRESENTADA COMO PENDENTE
+=====================================================================
+
+### DECISAO 9 — SOLICITACAO DE APROVACAO
+
+**Questao:** Onde os dados do cancelamento devem ser armazenados?
+
+**Opcoes:**
+- A) AUDITORIA APENAS
+  - Os dados especificos do cancelamento seriam armazenados exclusivamente no mecanismo de auditoria
+  - A coleta teria seu estado atualizado para CANCELADA, enquanto:
+    * justificativa
+    * usuario responsável
+    * data/hora
+    * contexto
+    * demais informações do cancelamento
+  ficariam no registro de auditoria.
+- B) COLETA + AUDIT_LOGS
+  - Os dados necessarios ao funcionamento da coleta permanecem na propria entidade de coleta, enquanto os dados de rastreabilidade ficam em audit_logs
+  - A estrutura deve separar:
+    * dados operacionais da coleta
+    * historico/contexto da operacao de cancelamento
+  - Essa opcao mantem a operacao da coleta independente do mecanismo de auditoria.
+- C) TABELA ESPECÍFICA DE CANCELAMENTO
+  - Criar uma estrutura/tabela propria para cancelamentos, contendo os dados especificos da operacao
+  - Além dela, poderá existir auditoria para registrar o contexto da operacao
+  - Essa opcao cria uma separacao explícita entre:
+    * coleta
+    * cancelamento
+    * auditoria
+
+**Contexto:**
+- A Decisao 8 estabeleceu que todo cancelamento deve possuir auditoria completa
+- Agora precisamos definir onde os dados necessarios ao cancelamento ficarao armazenados
+- Nao confundir:
+  * estado da coleta
+  * dados operacionais do cancelamento
+  * historico/auditoria
+- A escolha deve evitar duplicacao desnecessaria e preservar rastreabilidade
+
+**Nao assumir:**
+- Nao escolher automaticamente B ou C por serem arquiteturalmente mais completas
+- Nao assumir que auditoria substitui dados operacionais
+- A decisão pertence ao responsavel pelo produto
+
+=====================================================================
+11. STATUS DAS OUTRAS DECISOES (10 A 11)
+=====================================================================
+
+### Decisoes 10 e 11 — Permanecem PENDENTES
+
+- DECISAO 10: Deve haver notificacao ao CLIENTE quando Prestador/Admin cancela? (SIM / NAAO / condicional) — NAO DECIDIDA
+- DECISAO 11: O cancelamento afeta a reputacao do PRESTADOR? (A / B / C) — NAO DECIDIDA
+
+Nenhuma dessas decisoes deve ser antecipada ou apreciada nesta missao. Apenas a DECISAO 9 esta apresentada para resposta imediata do responsavel.
+
+=====================================================================
+12. REGISTRO DE IMPLEMENTACAO
+=====================================================================
+
+### Nenhuma alteracao autorizada
+- Nao alterar codigo Flutter
+- Nao alterar Backend (FastAPI) — exceto documentacao de regras ja confirmadas (decisoes 1-9)
+- Nao alterar banco de dados (PostgreSQL)
+- Nao criar migration
+- Nao alterar testes unitarios ou de integracao
+- Nao refatorar codigo existente
+- Nao criar novos endpoints (awaiting decision 9 definicao de armazenamento)
+- Nao fazer commit de codigo fonte
+- Nao alterar arquitetura estabelecida
+- Nao alterar TRANSICOES_VALIDAS
+- Nao alterar estrutura Outbox
+- Nao implementar idempotencia (ja decidida na decisao 7)
+- Nao implementar auditoria ainda (definicao pending na decisao 8, mas aprovada; implementacao deferred)
+- Nao criar tabela de cancelamento
+- Nao criar campos novos no banco
+
+### Apenas documentos foram modificados
+- Relatorio_63.txt criado (esta missao)
+- Relatorio_62.txt anterior (missao 50)
+- Relatorio_61.txt anterior (missao 49)
+
+=====================================================================
+13. STATUS DO GIT
+=====================================================================
+
+Arquivos modificados nesta sessao:
+- Relatorio_63.txt (NOVO - registro da Decisao 8 confirmada + Decisao 9 apresentada)
+
+Arquivos ja existentes (nao alterados por esta missao):
+- Relatorio_62.txt (Missao 50 - registro da Decisao 7 confirmada + Decisao 8 apresentada)
+- Relatorio_61.txt (Missao 49 - registro da Decisao 6 confirmada + Decisao 7 apresentada)
+- Relatorio_61.txt (Missao 49 - registro da Decisao 6 confirmada + Decisao 7 apresentada)
+- Relatorio_60.txt (Missao 48 - Decisoes 1-6 confirmadas + Decisao 6)
+- Relatorio_59.txt (Missao 47 - Decisoes 1-5 confirmadas + Decisao 5 apresentada)
+- Relatorio_58.txt (Missao 46 - Decisoes 2, 3 apresentadas + Decisao 4)
+- Relatorio_57.txt (Missao 45 - registro da Decisao 1 + Decisao 2 apresentacao)
+- Relatorio_56.txt (Missao 44 - diagnostico de estado)
+- Relatorio_55.txt (Missao 43 - especificacao com corrigida secao 4)
+- Relatorio_54.txt (Missao 42 - consolidacao das 13 decisoes)
+- Relatorio_53.txt (Missao 41 - analise original)
+- Relatorio_52.txt (Missao 39 - remocao de legado)
+- .gitignore (modificacao preexistente)
+- Build caches (modificacoes preexistentes)
+
+Nenhum arquivo de codigo, nenhum teste, nenhuma configuracao de banco
+ou dependencia foi alterado ou criado (exceto os relatorios de missao).
+
+=====================================================================
+14. PRÓXIMO PASO
+=====================================================================
+
+### Aguardar resposta exclusiva da DECISÃO 9
+
+O responsavel pelo projeto deve responder unicamente sobre:
+
+**DECISAO 9:** Onde os dados do cancelamento devem ser armazenados?
+
+**Opcoes validas:**
+- A) AUDITORIA APENAS
+  - Dados do cancelamento armazenados exclusivamente no mecanismo de auditoria
+  - Coleta atualizada para CANCELADA; justificativa, usuario, data/hora, contexto ficam no auditoria
+- B) COLETA + AUDIT_LOGS
+  - Dados operacionais da coleta permanecem na entidade de coleta
+  - Dados de rastreabilidade ficam em audit_logs
+  - Estrutura separa dados operacionais do historico/contexto de cancelamento
+- C) TABELA ESPECÍFICA DE CANCELAMENTO
+  - Criar estrutura/tabela propria para cancelamentos com dados especificos da operacao
+  - Além da tabela, existirá auditoria para registrar contexto da operacao
+  - Cria separacao explícita entre coleta, cancelamento e auditoria
+
+Apos a resposta da DECISAO 9, a seguinte missa podera ser iniciada:
+- Se DECISAO 9 = A) AUDITORIA APENAS: dados do cancelamento ficam apenas no audit_logs; coleta tem apenas estado atualizado
+- Se DECISAO 9 = B) COLETA + AUDIT_LOGS: dados operacionais da coleta ficam na coleta; rastreabilidade em audit_logs; estrutura separada mantida
+- Se DECISAO 9 = C) TABELA ESPECÍFICA DE CANCELAMENTO: tabela propria para cancelamento criada; auditoria registra contexto; separacao clara entre os tres elementos
+
+### Ordem sequencial de decisoes pendentes apos DECISAO 9
+1. DECISAO 9: Onde armazenar dados (A / B / C) — AGUARDANDO (esta missao)
+2. DECISAO 10: Notificacao ao CLIENTE (SIM / NAAO / condicional)
+3. DECISAO 11: Afeta reputacao do PRESTADOR (A / B / C)
+
+### Prioridade apos confirmacao das decisoes 1-9
+1. Registrar todas as nove decisoes aprovadas no relatorio oficial
+2. Apos decisao 9: definir implementacao de onde os dados do cancelamento ficam (schema, tabelas, armazenamento)
+3. Apos decisao 9: definir proximas decisoes 10-11 sequencialmente
+4. Apos todas as 11 decisoes confirmadas: gerar especyfikacao definitiva e iniciar implementacao
+
+=====================================================================
+FIM DO RELATORIO 63
+=====================================================================

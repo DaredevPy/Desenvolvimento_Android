@@ -1,0 +1,303 @@
+RELATORIO 66 — STATUS DE ETAPAS E PARENTE PARA PROXIMAS ETAPAS
+=====================================================================
+
+DATA: 2026-09-04
+MISSAO: 53 — Auditoria pré-finalizacao do MVP / Status consolidado
+MODO: APENAS STATUS E ROTEIRO — NENHUMA ALTERACAO DE CODIGO
+
+=====================================================================
+1. RESUMO EXECUTIVO
+=====================================================================
+
+### Posicao Atual do Projeto
+- Versao: VS_2.2 (commit 036599f)
+- Status: CONSOLIDADO — todas as 11 decisoes de negocio sobre cancelamento ACEITA -> CANCELADA foram definidas e documentadas
+- Ultima missao concluida: Missao 53 (Relatorio_65.txt) — Consolidacao definitiva das 11 decisoes
+- Total de relatorios gerados: 14 relatorios (Relatorio_52 a Relatorio_66)
+- Nenhuma linha de codigo alterada desde a Missao 39 (remocao de legado Firebase)
+
+### Contexto de Consolidacao
+O projeto passou por uma auditoria tecnica e de negocio completa nas ultimas missoes (48-53), resultando em:
+- 11 decisoes de negocio formalmente aprovadas/confirmadas
+- Regras definitivas estabelecidas para o fluxo ACEITA -> CANCELADA
+- Identificacao de decisoes condicionais que necessitam criterios objetivos
+- Documentacao completa do fluxo, regioes e permissoes
+
+=====================================================================
+2. LINHA DO TEMPO DAS MISSOES (RESUMO)
+=====================================================================
+
+### Missoes Concluidas (14 relatorios)
+- Missao 39 (Relatorio_52): Remocao de legado Firebase/Firestore ✅
+- Missao 41 (Relatorio_41): Fechamento do fluxo do prestador na conferencia ✅
+- Missao 42 (Relatorio_54): Consolidaçao das 13 decisoes identificadas ✅
+- Missao 43 (Relatorio_55): Fechamento de especificacao com corrigida secao 4 ✅
+- Missao 44 (Relatorio_56): Diagnostico de estado e roteiro ✅
+- Missao 45 (Relatorio_57): Registro da Decisao 1 + Decisao 2 ✅
+- Missao 46 (Relatorio_58): Decisoes 2 e 3 + apresentacao da Decisao 4 ✅
+- Missao 47 (Relatorio_59): Decisao 4 confirmada + apresentacao da Decisao 5 ✅
+- Missao 48 (Relatorio_60): Decisao 5 confirmada + apresentacao da Decisao 6 ✅
+- Missao 49 (Relatorio_61): Decisao 6 confirmada + apresentacao da Decisao 7 ✅
+- Missao 50 (Relatorio_62): Decisao 7 confirmada + apresentacao da Decisao 8 ✅
+- Missao 51 (Relatorio_63): Decisao 8 confirmada + apresentacao da Decisao 9 ✅
+- Missao 52 (Relatorio_64): Decisao 9 confirmada + apresentacao da Decisao 10 ✅
+- Missao 53 (Relatorio_65): Consolidacao definitiva das 11 decisoes ✅
+
+=====================================================================
+3. DECISOES 1 A 11 — STATUS ATUAL
+=====================================================================
+
+### DECISAO 1 — APROVADA ✅
+- CLIENTE NÃO pode cancelar apos ACEITA
+- CLIENTE somente pode cancelar quando a coleta estiver em SOLICITADA
+- Fluxo confirmado: CLIENTE -> SOLICITADA -> (ACEITA/PRESTADOR)
+
+### DECISAO 2 — APROVADA ✅
+- Justificativa e OBRIGATORIA para PRESTADOR ou ADMINISTRADOR cancelarem ACEITA
+- Aplica-se a PRESTADOR ou ADMINISTRADOR que cancelarem uma coleta em ACEITA
+
+### DECISAO 3 — APROVADA ✅
+- Justificativa sera um campo de TEXTO LIVRE
+- Sem enum nem formato estruturado obrigatorio
+- Nao inventar tamanho minimo de caracteres (nao foi aprovado como regra)
+
+### DECISAO 4 — APROVADA ✅
+- Foto/evidencia NÃO se aplica ao cancelamento em ACEITA
+- Continua relacionada a regras de divergencia de quantidade (doc 03 §3)
+
+### DECISAO 5 — APROVADA ✅
+- Cancelamento em ACEITA: nao gera multa, taxa, compensacao financceira
+- Nao gera debito ao PRESTADOR nem credito ao CLIENTE
+- Transacoes financeiras ligadas a FINALIZADA
+
+### DECISAO 6 — APROVADA ✅
+- Apenas ACEITA pode ser cancelada por esse fluxo
+- EM_DESLOCAMENTO, EM_CONFERENCIA, CARREGADA: nao podem ser canceladas por esse fluxo
+- A transicao CANCELADA permanece disponivel somente a partir de ACEITA
+
+### DECISAO 7 — APROVADA ✅
+- Idempotencia OBRIGATORIA para cancelamento
+- Chave UUIDv4
+- Protecao contra processamento duplicado
+- Regra vale para operacoes online e Outbox
+
+### DECISAO 8 — APROVADA ✅
+- Auditoria COMPLETA OBRIGATORIA para todo cancelamento
+- Deve permitir reconstruir: coleta, responsavel, perfil, momento, estado anterior, estado resultante, justificativa, operacao/idempotencia, contexto
+
+### DECISAO 9 — APROVADA ✅
+- Dados do cancelamento armazenados em COLLECTION + audit_logs
+- Nao criar tabela especifica de cancelamento
+- Coleta mantem estado operacional; audit_logs mantem historico detalhado
+
+### DECISAO 10 — CONDICIONAL ⚠️
+- Notificacao ao CLIENTE quando Prestador/Admin cancela ACEITA
+- Opcao C escolhida: CONDICIONAL
+- Necessita definir criterios objetivos para quando notificar/nao notificar
+- Quando notificar: cancelamento sem operacao efetiva, ADMINISTRADOR, justificativas especificas
+- Quando nao notificar: cancelamento normal por PRESTADOR
+- Conteudo da mensagem: "Sua coleta [numero] foi cancelada" (sem atribuir culpa)
+
+### DECISAO 11 — CONDICIONAL ⚠️
+- Reputacao do PRESTADOR apes de cancelamento em ACEITA
+- Nao deve significar automaticamente comportamiento inadequado
+- Criteria para afetar reputacao: cancelamento repetitivo (2+ vezes/mes), sem justificativa, padrao que impe finalizacao
+- NAO afetar: cancelamento unico-occasional com justificativa, ADMINISTRADOR, situacoes excepcionais
+- Justificativa tem influencia: conteudo significativo = peso positivo; vazia/penas espacos = peso negativo
+- ADMINISTRADOR pode revisar/classificar ocorrencias
+
+=====================================================================
+4. STATUS DAS IMPLEMENTACOES
+=====================================================================
+
+### O Que Ja Foi Definido (Decisoes 1-9 Aprovadas)
+- Regras de negocio definitivas para cancelamento ACEITA -> CANCELADA
+- Schema de validacao: role, justificativa obrigatoria, estado ACEITA
+- Estrutura de armazenamento: collection + audit_logs
+- Requisitos de idempotencia: header X-Idempotency-Key UUIDv4
+- Requisitos de auditoria: campos obrigatorios preservados
+- Permissoes por perfil: CLIENTE (SOLICITADA apenas), PRESTADOR/Admin (ACEITA com restricoes)
+
+### O Que Fica Como Condicional (Decisoes 10-11)
+- Implementacao de notificacao ao CLIENTE (depende de definicao de criterios)
+- Implementacao de regras de reputacao do PRESTADOR (depende de definicao de criterios)
+- Definicao de pesos exatos na formula de score ainda nao definida
+- Definicao de frequencia especifica de cancelamento que gatilha penalizacao ainda nao definida
+
+### O Que Ainda Nao Fui Implementado (Codigo/Backend/Frontend)
+- Nenhum codigo de implementacao foi addocado desde a Missao 39
+- Todos os endpoints, schemas, testes, banco modifications estao paralisados
+- Aguardar definicoes finais das decisoes 10 e 11 antes de iniciar implementacao
+
+=====================================================================
+5. ARQUITETURA E ESTRUTURA ATUAL
+=====================================================================
+
+### Arquitetura Verificada ✅
+- Flutter/Dart -> ApiService/Outbox -> FastAPI/Python -> PostgreSQL
+- Separacao clara entre cliente, prestador e admin
+- Backend como autoridade absolute das regras de negocio
+- Tratamento de erro padrao em APIs REST JSON sobre HTTPS
+
+### Regras De Negocio Verificadas ✅
+- Machine de estados: SOLICITADA -> ACEITA -> EM_DESLOCAMENTO -> EM_CONFERENCIA -> CARREGADA -> FINALIZADA
+- Transicao ACEITA -> CANCELADA definida e aprovada
+- Demais estados (EM_DESLOCAMENTO, etc.) nao possuem CANCELADA definida
+- Endpoint /cancelar atual: CLIENTE + SOLICITADA apenas
+- Endpoint /status (avancar_status): tecnicamente permite ACEITA -> CANCELADA sem aplicar regras especificas (identificada inconsistencia)
+
+### Bancos e Dados ✅
+- PostgreSQL com modelos de coleta, pneus, finanziro, auditoria
+- Tabela audit_logs existente e suporta todos os campos necessarios
+- Nao foram adicionadas novas tabelas ou campos desde a Missao 39
+- Campos de coleta: cancelado_por, justificativa_cancelamento, data_cancelamento (definidos na decision 9, podem ser nullable)
+
+=====================================================================
+6. TESTES E QUALIDADE
+=====================================================================
+
+### Testes Existentes ✅
+- Flutter: 206/206 testes passando ✅
+- Backend: 188/188 testes passando ✅
+- Coverage: Testes cliente, prestador, conferencia, cancelamento (parcial), contestação, idempotencia, Outbox
+
+### O Que os Testes Cobrem ✅
+- Fluxo cliente: criar coleta, minhas coletas, cancelamento SOLICITADA
+- Fluxo prestador: conferencia, finalizacao, listagem
+- Validacao de DOT, numero de fogo
+- Bloqueio de duplo clique
+- Operacoes offline com Outbox
+- Testes de idempotencia para outras rotas (nao ainda para cancelamento pos-ACEITA)
+
+### Riscos de Testes ⚠️
+- Nao ha testes especificos para: cancelamento pos-ACEITA por prestador/admin
+- Nao ha testes para: idempotencia no cancelamento
+- Nao ha testes para: auditoria de cancelamento
+- Nao ha testes para: permissoes condicionais (decisoes 10-11)
+
+=====================================================================
+7. RISCOS IDENTIFICADOS
+=====================================================================
+
+### Risco CRITICO ❌
+- Nao ha implementacao de codigo desde a Missao 39 (remocao de legado)
+- Todas as decisoes estao documentadas mas nao implementadas
+- Risco de inconsistencia se implementacao for iniciada sem definicao completa das decisoes 10-11
+
+### Risco ALTO ⚠️
+- Decisoes 10 e 11 sao condicionais e necessitam criterios objetivos antes da implementacao
+- Sem definicao de notificacao ao cliente, definicao de reputacao pode criar experiencia inconsistente
+- Schema de banco definido (decision 9) mas campos podem ser nullable sem uso
+
+### Risco MEDIO 🟡
+- Inconsistencia identificada: /status permite ACEITA -> CANCELADA tecnicamente mas /cancelar bloqueia (necessita endpoint dedicado ou consistencia)
+- Testes nao cobrem todos os cenarios de cancelamento definido nas decisoes
+- Documentacao e codigo podem ficar dessincronizados se nao houver controle
+
+### Risco BAIXO 🟢
+- Decisoes 1-9 sao objetivas e definidas, baixo risco de interpretacao errada
+- Arquitetura existente e robusta, nao ha conflitos majeurs de design
+
+=====================================================================
+8. CLASSIFICACAO MVP × V2
+=====================================================================
+
+### MVP — OBRIGATORIO (Essencial para funcionalidade)
+- Fluxo SOLICITADA -> ACEITA -> (outras etapas) -> FINALIZADA
+- Permissao CLIENTE cancelar em SOLICITADA
+- Permissao PRESTADOR/Admin cancelar em ACEITA (com restricoes definidas)
+- Justificativa obrigatoria para cancelamento pos-ACEITA
+- Idempotencia (chave UUIDv4) para protecao contra duplicidade
+- Auditorica obrigatoria para rastreabilidade
+- Armazenamento em collection + audit_logs
+
+### MVP — IMPORTANTE (Poderia ser na primeira versao)
+- Notificacao ao CLIENTE (depende de criterios definidos - decision 10 condicional)
+- Reputacao do PRESTADOR (depende de criterios definidos - decision 11 condicional)
+- Endpoint dedicado /cancelar-apos-aceite (ou consistencia no /cancelar)
+
+### V2 (Pode ficar para depois)
+- Tabela especifica de cancelamento (alternativa nao escolhida - decision 9)
+- Implementacao de todas as features condicionais sem restricoes
+- Features de estetica e UX avançadas
+- Integracao com provedores externos (WhatsApp API, Email)
+
+### DESNECESSARIO AGORA
+- Qualquer funcionalidade que nao esteja diretamente ligada as 11 decisoes definidas
+- Implementacao antecipada sem definicao completa dos criterios
+- Refatoracao sem necessidade de negocio
+
+=====================================================================
+9. PRÓXIMOS PASSOS IMEDIATOS
+=====================================================================
+
+### Fase 1 — Validacao Final (Ja nesta ponto)
+1. Confirmar decisao 10 (notificacao ao CLIENTE): definicao dos criterios objetivos
+2. Confirmar decisao 11 (reputacao do PRESTADOR): definicao dos criterios objetivos
+3. Validar que todos os relatorios (52-66) estao alinhados e consistentes
+
+### Fase 2 — Preparacao para Implementacao
+1. Definir parametros technically especicos nao ainda definidos:
+   - Peso exato de cancelamento na formula de score de reputacao
+   - Frequencia especifica de cancelamento que gatilha penalizacao
+   - Template exato de notificacao ao cliente
+   - Lógica de revisao/classificacao administrativa
+2. Validar schema de banco (fields definidos na decision 9)
+3. Preparar endpoints e schemas para implementacao
+
+### Fase 3 — Implementacao (Apos definicoes finais)
+1. Implementacao Backend: novo endpoint/validacoes, auditoria, idempotencia
+2. Implementacao Frontend: novo metodo ApiService, telo/accoes UI
+3. Criacao de testes: cenarios de cancelamento pos-ACEITA, idempotencia, auditoria
+4. flutter analyze e flutter test para validacao
+
+### Fase 4 — Lancamento
+1. rodar flutter analyze: 0 issues
+2. rodar suites de testes backend e frontend
+3. verificar consistencia documentacao-codigo-banco
+4. anunciar nova versao (VS_2.3 ou patch)
+
+=====================================================================
+10. INCONSISTÊNCIAS IDENTIFICADAS E NAO RESOLVIDAS
+=====================================================================
+
+1. /status endpoint vs /cancelar endpoint behavior:
+   - /status permite ACEITA -> CANCELADA tecnicamente via TRANSICOES_VALIDAS
+   - /cancelar bloqueia explicitamente qualquer estado != SOLICITADA
+   - Precisa definir: endpoint dedicado ou consistencia completa?
+
+2. Peso exato de cancelamento na formula de reputacao nao definido
+   - Decisao 11 define criterios mas nao define pesos numericos
+   - Depende de analise estatistica com dados historicos
+
+3. Frequencia de cancelamento que gatilha penalizacao nao definida
+   - Decision 11 menciona "2+ vezes/mes" mas nao e regra definitiva
+   - Depende de politica de negocio e concordancia
+
+4. Template exato de notificacao ao cliente nao definido
+   - Decisao 10 define criterios mas nao define conteudo detalhado
+   - Depende de politica de comunicacao e provedores
+
+=====================================================================
+11. CONSIDERACOES FINAIS
+=====================================================================
+
+### Estado Atual
+Projeto VS_2.2 encontra-se com todas as 11 decisoes de cancelamento apos ACEITA definidas e documentadas em relatorios consecutivos (52-66). O sistema esta em estado de "pronto para implementacao" — todas as decisoes de negocio estao definidas, mas nenhum codigo novo foi desde a Missao 39.
+
+### Pilares Confirmados
+1. Regras de negocio definitivas (decisoes 1-9)
+2. Arquitetura preservada (sem legado Firebase, arquitetura limpa)
+3. Testes passando (206 frontend, 188 backend)
+4. Documentacao completa e rastreavel
+
+### Proxima Ponte
+Aguardo a definicao dos criterios objetivos para:
+- Decisao 10: quando e como notificar o cliente
+- Decisao 11: quando e como afetar a reputacao do prestador
+
+Apos essas definicoes, o projeto pode prosseguir para a fase de implementacao com seguranca e sem risco de criar funcionalidades sem necessidade ou em conflito com as reglas de negocio estabelecidas.
+
+=====================================================================
+FIM DO RELATORIO 66
+=====================================================================
