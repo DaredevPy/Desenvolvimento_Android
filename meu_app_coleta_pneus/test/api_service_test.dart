@@ -659,5 +659,61 @@ void main() {
 
       await servico.cancelarColeta('x');
     });
+
+    test('com justificativa envia X-Justificativa e X-Idempotency-Key UUIDv4', () async {
+      final servico = servicoCom(
+        (caminho, cabecalhos) async => RespostaHttp(200, '[]'),
+        enviarEscrita: (caminho, cabecalhos, corpo) async {
+          expect(cabecalhos['X-Justificativa'], 'Cliente desistiu.');
+          final chave = cabecalhos['X-Idempotency-Key'];
+          expect(chave, isNotNull);
+          expect(RegExp(r'^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$').hasMatch(chave!), isTrue);
+          expect(jsonDecode(corpo), isEmpty);
+          return RespostaHttp(200, jsonEncode({'id': 'x', 'status': 'CANCELADA'}));
+        },
+      );
+
+      await servico.cancelarColeta(
+        'x',
+        justificativa: 'Cliente desistiu.',
+      );
+    });
+
+    test('idempotencyKey fornecida é preservada entre retries (não regenera)', () async {
+      var chamadas = 0;
+      final servico = servicoCom(
+        (caminho, cabecalhos) async => RespostaHttp(200, '[]'),
+        enviarEscrita: (caminho, cabecalhos, corpo) async {
+          chamadas += 1;
+          expect(cabecalhos['X-Idempotency-Key'], '9e9c8e77-a8a6-4ad1-9c4e-1a2b3c4d5e6f');
+          return RespostaHttp(200, jsonEncode({'id': 'x', 'status': 'CANCELADA'}));
+        },
+      );
+
+      await servico.cancelarColeta(
+        'x',
+        justificativa: 'Motivo.',
+        idempotencyKey: '9e9c8e77-a8a6-4ad1-9c4e-1a2b3c4d5e6f',
+      );
+      await servico.cancelarColeta(
+        'x',
+        justificativa: 'Motivo.',
+        idempotencyKey: '9e9c8e77-a8a6-4ad1-9c4e-1a2b3c4d5e6f',
+      );
+      expect(chamadas, 2);
+    });
+
+    test('sem justificativa não envia justificativa nem chave (fluxo cliente)', () async {
+      final servico = servicoCom(
+        (caminho, cabecalhos) async => RespostaHttp(200, '[]'),
+        enviarEscrita: (caminho, cabecalhos, corpo) async {
+          expect(cabecalhos.containsKey('X-Justificativa'), isFalse);
+          expect(cabecalhos.containsKey('X-Idempotency-Key'), isFalse);
+          return RespostaHttp(200, jsonEncode({'id': 'x', 'status': 'CANCELADA'}));
+        },
+      );
+
+      await servico.cancelarColeta('x');
+    });
   });
 }

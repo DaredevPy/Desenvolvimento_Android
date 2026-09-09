@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:http/http.dart' as http;
+import 'package:uuid/uuid.dart';
 
 import '../sessao/servico_sessao.dart';
 
@@ -151,19 +152,40 @@ class ApiService {
     );
   }
 
-  /// Cancela uma coleta SOLICITADA (somente CLIENTE dono da coleta).
+  /// Cancela uma coleta.
   ///
-  /// Transição: SOLICITADA → CANCELADA.
-  /// Corpo vazio estrito: {}.
-  /// Não envia X-Idempotency-Key (decisão arquitetural - backend não tem idempotência para cancelamento).
+  /// Suporta dois cenários:
+  /// - CLIENTE: SOLICITADA → CANCELADA (corpo vazio `{}`, sem justificativa).
+  /// - PRESTADOR/ADMINISTRADOR: ACEITA → CANCELADA. A justificativa é enviada
+  ///   no header `X-Justificativa` e a `X-Idempotency-Key` (UUIDv4) é enviada
+  ///   no header HTTP — obrigatórias no backend. Se o chamador não fornecer a
+  ///   chave, o método gera um UUIDv4 automaticamente para a operação.
+  ///
   /// Retorna mapa com {id, status}.
-  Future<Map<String, dynamic>> cancelarColeta(String coletaId) async {
-    final resposta = await _post(
+  Future<Map<String, dynamic>> cancelarColeta(
+    String coletaId, {
+    String? justificativa,
+    String? idempotencyKey,
+  }) async {
+    final temJustificativa = justificativa != null && justificativa.trim().isNotEmpty;
+    // A MESMA chave é preservada entre retries (Outbox): só gera se ausente.
+    final chaveFinal = idempotencyKey ?? (temJustificativa ? Uuid().v4() : null);
+
+    final cabecalhos = <String, String>{};
+    if (temJustificativa) {
+      cabecalhos['X-Justificativa'] = justificativa;
+    }
+    if (chaveFinal != null && chaveFinal.isNotEmpty) {
+      cabecalhos['X-Idempotency-Key'] = chaveFinal;
+    }
+
+    final codigo = await _post(
       '/api/v1/collections/$coletaId/cancelar',
       '{}',
+      cabecalhosExtras: cabecalhos,
     );
     return Map<String, dynamic>.from(
-      jsonDecode(resposta.corpo) as Map,
+      jsonDecode(codigo.corpo) as Map,
     );
   }
 
@@ -196,10 +218,17 @@ class ApiService {
     return RespostaHttp(resposta.statusCode, resposta.body);
   }
 
-  Future<RespostaHttp> _post(String caminho, String corpo) async {
+  Future<RespostaHttp> _post(
+    String caminho,
+    String corpo, {
+    Map<String, String>? cabecalhosExtras,
+  }) async {
     final cabecalhos = <String, String>{
       'Content-Type': 'application/json',
     };
+    if (cabecalhosExtras != null) {
+      cabecalhos.addAll(cabecalhosExtras);
+    }
     final token = _obterToken?.call();
     if (token != null && token.isNotEmpty) {
       cabecalhos['Authorization'] = 'Bearer $token';

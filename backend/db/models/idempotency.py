@@ -24,6 +24,7 @@ class IdempotencyRecord(Base):
 
     __table_args__ = (
         CheckConstraint(
-            "escopo IN ('PNEUS', 'CONCLUSAO', 'FINALIZACAO')", name="check_idem_escopo"
+            "escopo IN ('PNEUS', 'CONCLUSAO', 'FINALIZACAO', 'CANCELACAO')",
+            name="check_idem_escopo",
         ),
     )

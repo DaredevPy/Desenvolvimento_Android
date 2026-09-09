@@ -9,6 +9,7 @@ import 'tela_prestador_resumo_coleta.dart';
 ///
 /// Exibe informações da coleta e permite avançar o status quando aplicável.
 /// Transições suportadas: ACEITA → EM_DESLOCAMENTO, EM_DESLOCAMENTO → EM_CONFERENCIA.
+/// Suporta cancelamento pós-ACEITA com justificativa e idempotência.
 class TelaPrestadorDetalheColeta extends StatefulWidget {
   const TelaPrestadorDetalheColeta({
     super.key,
@@ -48,10 +49,19 @@ class _TelaPrestadorDetalheColetaState
   String get _status => _coleta['status'] as String? ?? '';
 
   bool get _podeIniciarDeslocamento => _status == 'ACEITA';
+  bool get _podeCancelar => _status == 'ACEITA';
   bool get _podeIniciarConferencia => _status == 'EM_DESLOCAMENTO';
   bool get _podeAbrirConferencia => _status == 'EM_CONFERENCIA';
   bool get _podeFinalizar => _status == 'CARREGADA';
   bool get _podeVerResumo => _status == 'FINALIZADA';
+
+  final _controladorJustificativa = TextEditingController();
+
+  @override
+  void dispose() {
+    _controladorJustificativa.dispose();
+    super.dispose();
+  }
 
   Future<void> _iniciarDeslocamento() async {
     if (_processando) return;
@@ -160,12 +170,81 @@ class _TelaPrestadorDetalheColetaState
     }
   }
 
+  Future<void> _cancelarColeta() async {
+    if (_processando || !_podeCancelar) return;
+
+    _controladorJustificativa.clear();
+    final justificativa = await showDialog<String>(
+      context: context,
+      builder: (contexto) => AlertDialog(
+        title: const Text('Cancelar coleta'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text('Informe o motivo do cancelamento.'),
+            const SizedBox(height: 8),
+            TextField(
+              controller: _controladorJustificativa,
+              autofocus: true,
+              decoration: const InputDecoration(
+                hintText: 'Justificativa',
+                border: OutlineInputBorder(),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(contexto),
+            child: const Text('Voltar'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(contexto, _controladorJustificativa.text.trim()),
+            child: const Text('Confirmar cancelamento'),
+          ),
+        ],
+      ),
+    );
+    if (justificativa == null || !mounted) return;
+    if (justificativa.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Informe a justificativa do cancelamento.'),
+        ),
+      );
+      return;
+    }
+
+    setState(() => _processando = true);
+    try {
+      final resultado = await widget.api.cancelarColeta(
+        _coleta['id'],
+        justificativa: justificativa,
+      );
+      if (!mounted) return;
+      setState(() {
+        _coleta = {..._coleta, ...resultado};
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Coleta cancelada com sucesso.')),
+      );
+    } on Exception catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(_mensagemErro(e))),
+      );
+    } finally {
+      if (mounted) setState(() => _processando = false);
+    }
+  }
+
   String _mensagemErro(Exception e) {
     final texto = e.toString();
     if (texto.contains('Erro HTTP 401')) return 'Sessão expirada. Faça login novamente.';
     if (texto.contains('Erro HTTP 403')) return 'Acesso negado para este perfil.';
     if (texto.contains('Erro HTTP 404')) return 'Coleta ou perfil não encontrado.';
     if (texto.contains('Erro HTTP 409')) return 'Transição inválida. Status atual pode ter mudado.';
+    if (texto.contains('Erro HTTP 422')) return 'Dados inválidos. Verifique a justificativa.';
     return 'Erro de conexão. Tente novamente.';
   }
 
@@ -294,6 +373,19 @@ class _TelaPrestadorDetalheColetaState
                         )
                       : const Icon(Icons.directions_car),
                   label: const Text('Iniciar deslocamento'),
+                ),
+              ),
+            if (_podeCancelar)
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton.icon(
+                  onPressed: _processando ? null : _cancelarColeta,
+                  icon: const Icon(Icons.cancel_outlined),
+                  label: const Text('Cancelar coleta'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.red,
+                    foregroundColor: Colors.white,
+                  ),
                 ),
               ),
             if (_podeIniciarConferencia)

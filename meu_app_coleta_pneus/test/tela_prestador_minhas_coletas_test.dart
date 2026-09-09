@@ -452,5 +452,98 @@ void main() {
       );
       expect(padraoUuidV4.hasMatch(op.id), isTrue);
     });
+
+    testWidgets('botão cancelar coleta aparece apenas para ACEITA', (tester) async {
+      final api = _apiCom();
+
+      await tester.pumpWidget(_envolver(
+        TelaPrestadorDetalheColeta(api: api, outbox: _outboxDummy(), coleta: _coletaJson()),
+      ));
+      await tester.pumpAndSettle();
+      expect(find.text('Cancelar coleta'), findsOneWidget);
+
+      for (final st in ['SOLICITADA', 'EM_DESLOCAMENTO', 'EM_CONFERENCIA', 'CARREGADA', 'FINALIZADA', 'CANCELADA']) {
+        await tester.pumpWidget(_envolver(
+          TelaPrestadorDetalheColeta(api: api, outbox: _outboxDummy(), coleta: _coletaJson(status: st)),
+        ));
+        await tester.pumpAndSettle();
+        expect(find.text('Cancelar coleta'), findsNothing, reason: 'status $st');
+      }
+    });
+
+    testWidgets('cancelar com justificativa envia headers e atualiza para CANCELADA', (tester) async {
+      final api = _apiCom(
+        escrita: (caminho, cabecalhos, corpo) async {
+          expect(caminho, '/api/v1/collections/aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee/cancelar');
+          expect(cabecalhos['X-Justificativa'], 'Cliente desistiu.');
+          expect(cabecalhos['X-Idempotency-Key'], isNotNull);
+          expect(jsonDecode(corpo), isEmpty);
+          return RespostaHttp(200, jsonEncode({
+            'id': 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee',
+            'status': 'CANCELADA',
+            'justificativa': 'Cliente desistiu.',
+          }));
+        },
+      );
+      final coleta = _coletaJson();
+      await tester.pumpWidget(_envolver(
+        TelaPrestadorDetalheColeta(api: api, outbox: _outboxDummy(), coleta: coleta),
+      ));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Cancelar coleta'));
+      await tester.pumpAndSettle();
+      expect(find.text('Informe o motivo do cancelamento.'), findsOneWidget);
+
+      await tester.enterText(find.byType(TextField), 'Cliente desistiu.');
+      await tester.tap(find.text('Confirmar cancelamento'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Coleta cancelada com sucesso.'), findsOneWidget);
+      expect(find.text('Cancelada'), findsOneWidget);
+      expect(find.text('Cancelar coleta'), findsNothing);
+    });
+
+    testWidgets('cancelar sem justificativa não chama a API', (tester) async {
+      var chamadas = 0;
+      final api = _apiCom(
+        escrita: (caminho, cabecalhos, corpo) async {
+          chamadas += 1;
+          return RespostaHttp(200, jsonEncode({'id': 'x', 'status': 'CANCELADA'}));
+        },
+      );
+      await tester.pumpWidget(_envolver(
+        TelaPrestadorDetalheColeta(api: api, outbox: _outboxDummy(), coleta: _coletaJson()),
+      ));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Cancelar coleta'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Confirmar cancelamento'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Informe a justificativa do cancelamento.'), findsOneWidget);
+      expect(chamadas, 0);
+    });
+
+    testWidgets('409 no cancelamento mostra erro de transição', (tester) async {
+      final api = _apiCom(
+        escrita: (caminho, cabecalhos, corpo) async =>
+            RespostaHttp(409, '{"detail":"Transição inválida."}'),
+      );
+      await tester.pumpWidget(_envolver(
+        TelaPrestadorDetalheColeta(api: api, outbox: _outboxDummy(), coleta: _coletaJson()),
+      ));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Cancelar coleta'));
+      await tester.pumpAndSettle();
+      await tester.enterText(find.byType(TextField), 'Motivo teste.');
+      await tester.tap(find.text('Confirmar cancelamento'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Transição inválida. Status atual pode ter mudado.'), findsOneWidget);
+      expect(find.text('Cancelar coleta'), findsOneWidget);
+    });
   });
 }

@@ -411,24 +411,131 @@ def aceitar_coleta(
 @router.post("/{coleta_id}/cancelar")
 def cancelar_coleta(
     coleta_id: str,
-    usuario: User = Depends(require_roles("CLIENTE")),
+    request: Request,
+    usuario: User = Depends(require_roles("CLIENTE", "PRESTADOR", "ADMINISTRADOR")),
+    justificativa: Optional[str] = Header(default=None, alias="X-Justificativa"),
+    x_idempotency_key: Optional[str] = Header(default=None, alias="X-Idempotency-Key"),
 ) -> dict:
+    """Cancela uma coleta conforme a matriz de perfis (doc 04 §2) e a máquina
+    de estados (doc 05 §1):
+
+    - CLIENTE: SOLICITADA -> CANCELADA na própria coleta (sem chave).
+    - PRESTADOR responsável / ADMINISTRADOR: ACEITA -> CANCELADA com
+      justificativa (X-Justificativa) e idempotência obrigatória
+      (X-Idempotency-Key UUIDv4).
+
+    O replay da MESMA chave devolve a resposta armazenada sem re-executar a
+    operação nem duplicar a auditoria (docs 09 §§4.1 e 08 §3.1). Chave alheia
+    é indistinguível de chave inexistente (404 uniforme)."""
     with db_session.SessionLocal() as db:
-        client = _client_do_usuario(db, usuario.id)
-        if client is None:
-            raise HTTPException(status_code=404, detail="Perfil não encontrado.")
-        coleta = db.get(Collection, coleta_id)
-        if coleta is None or coleta.client_id != client.id:
+        # FOR UPDATE serializa cancelamentos concorrentes da mesma coleta.
+        coleta = db.get(Collection, coleta_id, with_for_update=True)
+        if coleta is None:
             raise HTTPException(status_code=404, detail=NAO_ENCONTRADO)
-        # Doc 05: cliente cancela somente em SOLICITADA; ACEITA->CANCELADA é
-        # prestador/admin com justificativa (missão futura).
-        if coleta.status != "SOLICITADA":
-            raise HTTPException(status_code=409, detail=f"Transição inválida a partir de {coleta.status}.")
+
+        chave = None
+        hash_operacao = None
+
+        if usuario.role == "CLIENTE":
+            client = _client_do_usuario(db, usuario.id)
+            if client is None:
+                raise HTTPException(status_code=404, detail="Perfil não encontrado.")
+            # Anti-enumeração (padrão da API): alheia e inexistente são iguais.
+            if coleta.client_id != client.id:
+                raise HTTPException(status_code=404, detail=NAO_ENCONTRADO)
+            if coleta.status != "SOLICITADA":
+                raise HTTPException(
+                    status_code=409,
+                    detail=f"Transição inválida a partir de {coleta.status}.",
+                )
+        else:
+            # PRESTADOR responsável ou ADMINISTRADOR: apenas ACEITA -> CANCELADA.
+            if usuario.role == "PRESTADOR":
+                provider = _provider_do_usuario(db, usuario.id)
+                if provider is None:
+                    raise HTTPException(status_code=404, detail="Perfil não encontrado.")
+                # Anti-enumeração: coleta alheia e inexistente são iguais.
+                if coleta.provider_id != provider.id:
+                    raise HTTPException(status_code=404, detail=NAO_ENCONTRADO)
+            if justificativa is None or justificativa.strip() == "":
+                raise HTTPException(
+                    status_code=422,
+                    detail="Justificativa é obrigatória para cancelamento após ACEITA.",
+                )
+            if x_idempotency_key is None:
+                raise HTTPException(
+                    status_code=422,
+                    detail="X-Idempotency-Key é obrigatória para cancelamento após ACEITA.",
+                )
+            chave = _chave_idempotencia(x_idempotency_key)
+            # Hash da operação idempotente: mesma chave + mesma justificativa.
+            hash_operacao = hashlib.sha256(
+                f"{coleta_id}:CANCELADA:{justificativa}".encode()
+            ).hexdigest()
+            # Replay: mesma chave + mesma operação devolvem a resposta
+            # armazenada (mesmo com a coleta já CANCELADA); chave alheia e
+            # operação divergente seguem o contrato das demais operações
+            # (404 uniforme / 409).
+            armazenada = _verificar_chave_registro(
+                db, chave, usuario.id, "CANCELACAO", coleta_id, hash_operacao
+            )
+            if armazenada is not None:
+                return JSONResponse(status_code=200, content=armazenada)
+            if coleta.status != "ACEITA":
+                raise HTTPException(
+                    status_code=409,
+                    detail=f"Cancelamento permitido apenas para coleta em estado ACEITA. Estado atual: {coleta.status}.",
+                )
+
+        corpo_resposta = {
+            "id": coleta_id,
+            "status": "CANCELADA",
+            "justificativa": justificativa or "",
+        }
+        ip_origem = request.client.host if request.client else "desconhecida"
+        db.add(
+            AuditLog(
+                user_id=usuario.id,
+                acao="CANCELACAO_COLETA",
+                entidade_afetada="collections",
+                entidade_id=coleta_id,
+                valor_anterior_json={"status": coleta.status},
+                valor_novo_json={"status": "CANCELADA", "justificativa": justificativa or ""},
+                ip_origem=ip_origem,
+            )
+        )
+        if chave is not None:
+            db.add(
+                IdempotencyRecord(
+                    chave=chave,
+                    user_id=usuario.id,
+                    escopo="CANCELACAO",
+                    recurso_id=coleta_id,
+                    request_hash=hash_operacao,
+                    response_json=corpo_resposta,
+                )
+            )
+
+        # Alterar estado da coleta (apenas o status; dados permanecem intactos:
+        # pneus, itens, prestador, históricos e financeiros). Não gera snapshot
+        # financeiro nem transação (coleta não finalizada por conclusão).
         coleta.status = "CANCELADA"
-        db.commit()
-        return {"id": coleta.id, "status": coleta.status}
 
-
+        try:
+            db.commit()
+        except IntegrityError:
+            db.rollback()
+            if chave is None:
+                raise
+            # Corrida de duas requisições com a mesma chave: o UNIQUE(chave)
+            # decide no banco quem venceu; o perdedor reexecuta o replay.
+            armazenada = _verificar_chave_registro(
+                db, chave, usuario.id, "CANCELACAO", coleta_id, hash_operacao
+            )
+            if armazenada is None:
+                raise
+            return JSONResponse(status_code=200, content=armazenada)
+        return corpo_resposta
 @router.post("/{coleta_id}/status")
 def avancar_status(
     coleta_id: str,
@@ -579,19 +686,25 @@ def registrar_pneus(
                 return JSONResponse(status_code=200, content=armazenada)
         if coleta.status != "EM_CONFERENCIA":
             raise HTTPException(status_code=409, detail="Conferência não está aberta para esta coleta.")
-        registrados = _registrar_pneus(db, coleta_id, dados.pneus)
-        corpo = [
-            {
-                "id": pneu.id,
-                "dot": pneu.dot,
-                "numero_fogo": pneu.numero_fogo,
-                "numero_fogo_ilegivel": pneu.numero_fogo_ilegivel,
-                "idade_calculada_anos": float(pneu.idade_calculada_anos),
-                "alerta_idade_obsoleto": pneu.alerta_idade_obsoleto,
-            }
-            for pneu in registrados
-        ]
         try:
+            # O guard cobre o flush dos pneus além do commit: em corrida pela
+            # MESMA chave, o perdedor pode violar uq_tires_collection_numero_fogo
+            # no flush antes de o vencedor registrar a chave (SQLite ignora
+            # FOR UPDATE); o contrato documentado é resolver a corrida por
+            # uq_idem_chave (replay). Em PostgreSQL o FOR UPDATE serializa e
+            # este caminho é inacessível.
+            registrados = _registrar_pneus(db, coleta_id, dados.pneus)
+            corpo = [
+                {
+                    "id": pneu.id,
+                    "dot": pneu.dot,
+                    "numero_fogo": pneu.numero_fogo,
+                    "numero_fogo_ilegivel": pneu.numero_fogo_ilegivel,
+                    "idade_calculada_anos": float(pneu.idade_calculada_anos),
+                    "alerta_idade_obsoleto": pneu.alerta_idade_obsoleto,
+                }
+                for pneu in registrados
+            ]
             if chave is not None:
                 db.add(
                     IdempotencyRecord(
