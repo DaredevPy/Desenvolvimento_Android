@@ -61,7 +61,8 @@ backend/
 │   ├── test_hardening.py                      # Missão 15: rate limiting, cabeçalhos HTTP e limites de entrada
 │   ├── test_db_schema.py                  # Testes de relacionamentos e snapshots
 │   ├── test_dot_repetition.py             # Teste obrigatório de repetição do DOT (500 pneus)
-│   └── test_cancelamento_aceita.py        # Cancelamento ACEITA → CANCELADA com idempotência (Missão 55)
+│   ├── test_cancelamento_aceita.py        # Cancelamento ACEITA → CANCELADA com idempotência (Missão 55)
+│   └── test_resumo_cliente.py             # Resumo do CLIENTE: pneus conferidos na FINALIZADA (Missão 56)
 ├── requirements.txt                        # Dependências Python
 └── .env.example
 ```
@@ -88,6 +89,6 @@ Para executar a suíte de testes unitários e de integração, a partir da raiz 
 
 ```bash
 python -m unittest discover -s backend/tests -p "test_*.py"
-# Equivalente recomendado (baseline verificado: 200 testes):
+# Equivalente recomendado (baseline verificado pós-Missão 56: 204 testes):
 python -m pytest backend/tests
 ```

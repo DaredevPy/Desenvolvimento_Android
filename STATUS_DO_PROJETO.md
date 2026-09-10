@@ -73,11 +73,11 @@ Aplicação 100% conteinerizada via Docker.
 | 31 | Finalização da Coleta pelo Prestador (CARREGADA → FINALIZADA via Outbox + 157/157 testes OK) |
 | 32 | Resumo da Coleta Finalizada no Flutter (TelaPrestadorResumoColeta + 163/163 testes OK) |
 
-### 4.1. Missões 33 a 55.4 (série posterior ao Status)
+### 4.1. Missões 33 a 56 (série posterior ao Status)
 
 | Missão | Descrição | Evidência |
 | --- | --- | --- |
-| 33 | Resumo / Comprovante da Coleta Finalizada para o CLIENTE — **PARCIAL**: tela e teste existem, mas o backend não expõe os pneus conferidos ao CLIENTE (ver §8) | `tela_cliente_resumo_coleta.dart` + teste |
+| 33 | Resumo / Comprovante da Coleta Finalizada para o CLIENTE (tela) — backend concluído na Missão 56 | `tela_cliente_resumo_coleta.dart` + teste |
 | 39 | Remoção do legado Firebase/Firestore (arquivos, dependências e testes removidos) | `Relatorio_52.txt` |
 | 40 | Auditoria de integridade pós-Missão 39 | `Relatorio_52.txt` |
 | 53 | Status consolidado pré-finalização do MVP — somente diagnóstico, nenhuma alteração de código | `Relatorio_66.txt` |
@@ -86,6 +86,7 @@ Aplicação 100% conteinerizada via Docker.
 | 55.1 | Fechamento da idempotência e integração do cancelamento no Flutter (UUIDv4 automático) | `RELATORIO_MISSAO_55_1.md` |
 | 55.3 | Auditoria final do cancelamento pós-ACEITA: correção de 3 bugs CRÍTICOS + migration 005 | `RELATORIO_MISSAO_55_3.md` |
 | 55.4 | Fechamento da pendência do Outbox (guard de IntegrityError no flush; SQLite ignora FOR UPDATE) | `RELATORIO_MISSAO_55_4.md` |
+| 56 | Resumo/Comprovante do CLIENTE: `obter_coleta` expõe `pneus` conferidos ao CLIENTE dono de coleta FINALIZADA (+ 4 testes); RBAC/anti-enumeração/ownership preservados; sem migration | `RELATORIO_MISSAO_56_1.md` |
 
 O restante do intervalo das Missões 33–52 está documentado nos arquivos históricos
 `Relatorio_*.txt` (a numeração do relatório não é 1:1 com a da missão).
@@ -96,22 +97,39 @@ relatório geral em `Relatorio_26.txt`.
 
 ## 5. Missão Atual
 
-Nenhuma missão em execução. Baseline atestado no commit "VS_2.4": backend 200
-testes passando, Flutter 213 testes passando e `flutter analyze` sem alertas.
+Nenhuma missão em execução. Última missão concluída: **Missão 56** (Resumo/
+Comprovante do CLIENTE — `obter_coleta` expõe `pneus` conferidos ao CLIENTE dono
+de coleta FINALIZADA). Baseline pós-Missão 56: backend **204** testes passando,
+Flutter **213** testes passando e `flutter analyze` sem alertas. O commit
+"VS_2.5" (`95f7880`) já foi gerado com o código da missão, os relatórios
+`Relatorio_67/68.txt` e as atualizações de README/STATUS; restam apenas itens de
+evidência/refino a incorporar num commit de encerramento (ver §5.1).
 
-## 5.1. Estado do Git (VS_2.4)
+## 5.1. Estado do Git (pós-Missão 56)
 
-Working tree com alterações não commitadas: `Relatorio.txt` (untracked),
-`.gitignore` modificado (linha `Relatorio.txt` removida) e um artefato de build
-versionado com diff (`meu_app_coleta_pneus/build/test_cache/.../...dill.track.dill`).
-Os arquivos `meu_app_coleta_pneus/build/*` estão versionados no git (higiene a tratar).
+Commit base atual: **VS_2.5** (`95f7880`) — contém o código da Missão 56
+(`backend/app/collections.py`, `backend/tests/test_resumo_cliente.py`), os
+relatórios `Relatorio.txt`, `Relatorio_67.txt` e `Relatorio_68.txt`, e atualizações
+de `backend/README.md` (migrations 001–005 + listas de testes) e `.gitignore`.
+Pendente de commit (pequeno follow-up de encerramento): `RELATORIO_MISSAO_56_1.md`
+(evidência da Missão 56, untracked) e os refinamentos recentes de
+`STATUS_DO_PROJETO.md` e `backend/README.md` (baseline 204 + `test_resumo_cliente.py`).
+Permanecem para a Missão 58 (higiene): artefatos de build versionados
+(`meu_app_coleta_pneus/build/test_cache/.../...dill.track.dill` no VS_2.5) e
+`meu_app_coleta_pneus/build/*` no git.
 
 ## 6. Próximas Missões
 
-- Missão 56 — escopo a definir com o usuário. Candidatos identificados na auditoria
-  (VS_2.4): concluir o Resumo/Comprovante do CLIENTE (expor `pneus` ao CLIENTE no
-  backend) e atualizar as documentações de estado. Nenhuma implementação deve ser
-  iniciada antes da definição do escopo.
+- Encerramento da Missão 56 (pequeno follow-up, mediante autorização): commit de
+  encerramento com `RELATORIO_MISSAO_56_1.md` (evidência) + refinamentos de
+  `STATUS_DO_PROJETO.md` e `backend/README.md` já aplicados no working tree.
+  Decidir também se o contrato `itens_conferidos` (quantidades confirmadas/coletadas,
+  justificativa e fotos do resumo do CLIENTE) entra agora ou em missão curta futura.
+- Missão 57 — validação da DDL em PostgreSQL real (migrations 001–005, incl.
+  `VARCHAR(36)`×`UUID` da migration 003, `FOR UPDATE` e índices parciais).
+- Missão 58 — higiene e baseline do repositório (remover `build/*` versionados,
+  decisão sobre a série de relatórios e commits de documentação).
+- Demais: decisoes de negócio em aberto (ver §8 e docs 01–12).
 
 
 ## 6.1. Nota sobre relatórios
@@ -122,8 +140,10 @@ Os arquivos `meu_app_coleta_pneus/build/*` estão versionados no git (higiene a 
 contém o estado geral do projeto com todas as etapas concluídas.
 `Relatorio_27.txt` contém o resultado da auditoria de integridade
 e segurança (Missão 20). A série atual de relatórios é `RELATORIO_54.md` e
-`RELATORIO_MISSAO_55/55_1/55_3/55_4.md` (Missões 54 a 55.4); `Relatorio_52.txt`
-e `Relatorio_66.txt` documentam respectivamente as Missões 39/40 e 53.
+`RELATORIO_MISSAO_55/55_1/55_3/55_4/56_1.md` (Missões 54 a 56); `Relatorio_52.txt`,
+`Relatorio_66.txt`, `Relatorio_67.txt` e `Relatorio_68.txt` documentam
+respectivamente as Missões 39/40, a Missão 53, a auditoria pré-Missão 56 e o
+panorama de estado pós-Missão 56.
 
 ## 7. Decisões Críticas
 
@@ -161,9 +181,14 @@ Ver `12_DECISOES_ARQUITETURAIS.md` como fonte detalhada. Resumo:
 - Filtro por região/geolocalização das coletas disponíveis ao prestador (doc 05 Etapa 2): endereço é JSON livre sem dados geográficos modelados — critério de correspondência indefinido.
 - Valor estimado a receber exibido ao prestador (doc 05 Etapa 2): price_rules já existem (Missão 10); falta endpoint de consulta/estimativa para o app.
 - Política de data_vencimento dos lançamentos financeiros (hoje: data do fechamento); cobrança/pagamento e liquidação Pix são missões futuras (doc 07 §§4-5).
-- Contrato do Resumo do CLIENTE (Missão 33 — PARCIAL): o backend não expõe os pneus conferidos ao CLIENTE em nenhum endpoint (`obter_coleta` e `listar_minhas_coletas` retornam apenas o corpo `_resposta`, sem `pneus`); `tela_cliente_resumo_coleta.dart` depende desse campo e, em fluxo real, sempre exibe "Nenhum pneu conferido registrado".
-- `backend/README.md` desatualizado: estrutura de migrations listada apenas até 003 (faltam 004 e 005) e lista de testes sem `test_cancelamento_aceita.py`.
-- Higiene do repositório: artefatos de build (`meu_app_coleta_pneus/build/`) estão versionados no git; working tree com alterações não commitadas (`Relatorio.txt` untracked e `.gitignore`).
+- Contrato do Resumo do CLIENTE (Missões 33/56): o backend agora expõe `pneus`
+  (dot, marca, medida, numero_fogo, numero_fogo_ilegivel, idade_calculada_anos,
+  alerta_idade_obsoleto) ao CLIENTE dono de coleta FINALIZADA via `obter_coleta`.
+  **Permanente**: as quantidades conferida/coletada, justificativa de divergência
+  e fotos (campo `itens_conferidos`) ainda não são entregues ao CLIENTE — definir
+  se entram no contrato agora ou em missão curta futura.
+- `backend/README.md` em dia na maior parte (VS_2.5): migrations listadas até 005 e `test_cancelamento_aceita.py` incluído; o refino pós-Missão 56 (baseline 204 + `test_resumo_cliente.py`) foi aplicado no working tree e aguarda commit.
+- Higiene do repositório: artefatos de build (`meu_app_coleta_pneus/build/`) estão versionados no git (presentes inclusive no VS_2.5); tratar na Missão 58.
 - Validação de DDL em PostgreSQL: a suíte atual roda apenas em SQLite in-memory (PostgreSQL indisponível no ambiente de desenvolvimento); a migration 003 usa `VARCHAR(36)` com FK para colunas `UUID` do schema 001 — confirmar compatibilidade na primeira subida em PostgreSQL real antes de implantar.
 - Esquema formal do endereco_origem_json (hoje: objeto JSON não vazio).
 - Obrigatoriedade de X-Idempotency-Key no backend (criação de coletas, pneus, conclusão e finalização): o outbox do Flutter já envia o cabeçalho em todas as operações (Missões 16–18/55), mas o backend ainda o aceita como opcional para não quebrar clientes atuais; a decisão de torná-lo obrigatório permanece em aberto (o cancelamento CLIENTE sem chave foi mantido por design na Missão 55).
