@@ -25,7 +25,11 @@ backend/
 │   │   ├── 002_idempotencia_coleta.sql    # Hash + resposta armazenada da idempotência
 │   │   ├── 002_idempotencia_coleta_down.sql # Reversão
 │   │   ├── 003_outbox_idempotencia.sql    # Registros de idempotência por operação offline
-│   │   └── 003_outbox_idempotencia_down.sql # Reversão
+│   │   ├── 003_outbox_idempotencia_down.sql # Reversão
+│   │   ├── 004_tire_numero_fogo_unique.sql  # Índice único parcial (collection_id, numero_fogo) na mesma coleta
+│   │   ├── 004_tire_numero_fogo_unique_down.sql # Reversão
+│   │   ├── 005_cancelamento_escopo.sql      # Estende o CHECK de escopo com 'CANCELACAO' (Missão 55)
+│   │   └── 005_cancelamento_escopo_down.sql # Reversão
 │   ├── models/                            # Modelos ORM SQLAlchemy 2.0
 │   │   ├── base.py
 │   │   ├── user.py
@@ -56,7 +60,8 @@ backend/
 │   ├── test_contestacao.py                    # Contestação FINALIZADA → CONTESTADA (RBAC, estados, auditoria)
 │   ├── test_hardening.py                      # Missão 15: rate limiting, cabeçalhos HTTP e limites de entrada
 │   ├── test_db_schema.py                  # Testes de relacionamentos e snapshots
-│   └── test_dot_repetition.py             # Teste obrigatório de repetição do DOT (500 pneus)
+│   ├── test_dot_repetition.py             # Teste obrigatório de repetição do DOT (500 pneus)
+│   └── test_cancelamento_aceita.py        # Cancelamento ACEITA → CANCELADA com idempotência (Missão 55)
 ├── requirements.txt                        # Dependências Python
 └── .env.example
 ```
@@ -79,8 +84,10 @@ uvicorn backend.app.main:app
 
 ## Execução dos Testes Automatizados do Banco
 
-Para executar a suíte de testes unitários e de integração do banco de dados:
+Para executar a suíte de testes unitários e de integração, a partir da raiz do repositório:
 
 ```bash
 python -m unittest discover -s backend/tests -p "test_*.py"
+# Equivalente recomendado (baseline verificado: 200 testes):
+python -m pytest backend/tests
 ```

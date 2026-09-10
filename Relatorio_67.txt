@@ -1,0 +1,278 @@
+RELATORIO 67 — PANORAMA DO ESTADO DAS ETAPAS E PONTO DE RETOMADA
+=====================================================================
+
+DATA: 2026-09-10
+MISSAO: Auditoria de estado pos Missao 55.4 / VS_2.4 (somente leitura)
+MODO: APENAS REGISTRO DE ESTADO E ROTEIRO — NENHUMA ALTERACAO DE CODIGO
+
+=====================================================================
+1. RESUMO EXECUTIVO
+=====================================================================
+
+### Posicao Atual do Projeto
+- Versao: VS_2.4 (commit 0f0af91 de 2026-09-09 19:34 -0300, branch main)
+- Ultima missao oficial: Missao 55.4 — Fechamento da pendencia do Outbox
+- Baseline verificada nesta auditoria:
+  * Backend: 200 testes passando (python -m pytest backend/tests)
+  * Flutter: 213 testes passando (flutter test)
+  * Statico: flutter analyze "No issues found"
+- Banco: PostgreSQL indisponivel no ambiente desta maquina (porta 5432 fechada,
+  sem Docker, DATABASE_URL ausente). Toda a suite roda sobre SQLite in-memory.
+- Nenhuma implementacao, refatoracao ou correcao foi feita nesta auditoria.
+
+### O Que Este Relatorio Entrega
+1) Onde cada etapa do roadmap (doc 11) se encontra hoje.
+2) Onde paramos exatamente (ponto de retomada).
+3) Pendencias novas identificadas (lacunas reais).
+4) Riscos que precisam ser evitados nas proximas etapas.
+5) Ordem recomendada para as proximas missoes, evitando regressao.
+
+=====================================================================
+2. MAPEAMENTO DE NUMERACAO (IMPORTANTE PARA NAO SE PERDER)
+=====================================================================
+
+- O numero do arquivo Relatorio_N.txt NAO e igual ao numero da missao.
+  Exemplos confirmados por varredura dos arquivos:
+  * Relatorio_44.txt = Missao 33 (Resumo/Comprovante do Cliente)
+  * Relatorio_46.txt = Missao 34 (Contestacao no Flutter)
+  * Relatorio_47.txt = Missao 35 (Analise Numero de Fogo / DOT)
+  * Relatorio_48.txt = Missao 36 (Migration 004 — unico parcial numero de fogo)
+  * Relatorio_52.txt = Missoes 39/40 (Remocao do legado Firebase/Firestore)
+  * Relatorio_66.txt = Missao 53 (Status consolidado das 11 decisoes de cancelamento)
+- Missoes 54 a 55.4 foram registradas nos arquivos RELATORIO_MISSAO_55*.md
+  (implementacao e fechamento do cancelamento ACEITA -> CANCELADA e do Outbox).
+
+=====================================================================
+3. LINHA DO TEMPO CONSOLIDADA (PRINCIPAIS MARCOS)
+=====================================================================
+
+### Marcos por Fase (resumo)
+- Missoes iniciais: modelo FastAPI + migrations 001-003 + autenticacao JWT + RBAC.
+- Missoes 12/13: idempotencia por X-Idempotency-Key (criacao de coleta e pneus).
+- Missao 14: contestacao FINALIZADA -> CONTESTADA no backend (RBAC + auditoria).
+- Missao 23: tratamento de falhas no outbox (definitiva vs transitória).
+- Missao 33 (Relatorio_44): Tela de Resumo/Comprovante do Cliente (PARCIAL).
+- Missao 34 (Relatorio_46): Confronto de contestacao no Flutter (com pendencias).
+- Missao 35 (Relatorio_47): Documentacao da analise Numero de Fogo / DOT.
+- Missao 36 (Relatorio_48): Migration 004 — indice unico parcial
+  uq_tires_collection_numero_fogo (DOT continua NAO unico, conforme regra).
+- Missoes 39/40 (Relatorio_52): Remocao de legado Firebase/Firestore.
+- Missao 53 (Relatorio_66): 11 decisoes de negocio sobre cancelamento definidas.
+- Missoes 54 a 55.4 (RELATORIO_MISSAO_55*.md): implementacao do cancelamento
+  (CLIENTE SOLICITADA -> CANCELADA; PRESTADOR/ADMINISTRADOR ACEITA -> CANCELADA
+  com justificativa + idempotencia), migration 005 (check_idem_escopo) e
+  fechamento da pendencia do Outbox (chave HTTP preservada nos retries).
+  Resultado materializado no commit 0f0af91 (VS_2.4).
+
+=====================================================================
+4. ESTADO DAS ETAPAS DO ROADMAP (DOC 11) — DIAGNOSTICO TECNICO
+=====================================================================
+
+Legenda: [OK] concluido funcional | [PAR] parcial | [NAO] nao iniciado
+
+### FASE 1 — Arquitetura e Banco de Dados
+- [OK] Projeto FastAPI assincrono + estrutura de migrations 001 a 005 (.sql,
+  com _down). Validador: testes de schema + suite completa.
+- [PAR] Migrations sao manuais (sem Alembic, citado no doc 11).
+- [PAR] DDL real do PostgreSQL NUNCA foi exercitada por rodada de testes
+  (ambiente local so tem SQLite in-memory).
+
+### FASE 2 — Autenticacao e Perfis
+- [OK] Cadastro/login JWT (Argon2id com sal), roles CLIENTE/PRESTADOR/ADMIN
+  e RBAC por rota (require_roles + ownership).
+- [PAR] Refresh token com hash no banco (doc 08 §3.1) NAO existe — a sessao
+  Flutter tem apenas login; access token expirando nao tem renovacao automatica.
+
+### FASE 3 — Modulo do Cliente
+- [OK] Criar solicitacao de coleta (offline-first via outbox) e declaracao
+  da carga (itens com marca/dimensao/quantidade_declarada).
+- [OK] Acompanhamento de status via listagem (sem push em tempo real).
+- [OK] Confirmacao/contestacao pos-coleta (contestar convoca status CONTESTADA
+  com auditoria) e cancelamento em SOLICITADA.
+- [PAR] Resumo/Comprovante da coleta FINALIZADA: a TELA existe e le os campos
+  'pneus'/'itens_conferidos', MAS o backend (funcao _resposta em
+  backend/app/collections.py, linhas 271-289) NAO envia esses campos para o
+  CLIENTE. Resultado: a tela exibe "Nenhum pneu conferido registrado" mesmo
+  quando ha pneus. LACUNA FUNCIONAL CONFIRMADA NO CODIGO.
+
+### FASE 4 — Modulo do Prestador
+- [OK] Aceite concorrente seguro (UPDATE condicional + 409), avancos de status,
+  conferencia com carga pre-carregada (sem re-digitacao), registros de pneus.
+- [OK] Fluxo de finalizacao (CARREGADA -> FINALIZADA) com snapshot financeiro.
+- [PAR] Dashboard mobile-first do prestador (ganhos do mes, coletas, pneus,
+  reputacao) do doc 07 §5 NAO esta implementada.
+- [NAO] Processo de cadastro completo de veiculos / chave Pix nao esta fechado.
+
+### FASE 5 — Fluxo da Coleta (Maquina de Estados)
+- [OK] Estados implementados: SOLICITADA, ACEITA, EM_DESLOCAMENTO,
+  EM_CONFERENCIA, CARREGADA, FINALIZADA, CONTESTADA, CANCELADA
+  (constraint CHECK em 001/005; transicoes via UPDATE condicional + FOR UPDATE).
+- [OK] Carregamento automatico dos itens declarados na conferencia.
+- [NAO] Assinatura digital do responsavel no encerramento (decisao pendente no
+  doc 05 — nao implementada; finalizacao exige corpo vazio).
+
+### FASE 6 — Pneus e Validacao de DOT
+- [OK] Registro individual de pneus em tires (1 pneu = 1 registro UUIDv4),
+  DOT NAO unico (repeticao permitida), validacao WWYY com semana 01-53,
+  calculo de idade no backend, alerta de obsolescencia (>= 7 anos, limite
+  configuravel por constante LIMITE_ALERTA_IDADE_ANOS).
+- [OK] Numero de Fogo: unico DENTRO da mesma coleta (409 + indice parcial 004);
+  permite repeticao entre coletas (identifica o pneu fisico, nao o registro).
+- [OK] Numero de fogo ilegivel exige foto + observacao (regra validada no
+  backend); divergencia de quantidade exige justificativa + foto.
+
+### FASE 7 — Modulo Financeiro
+- [OK] Nucleo: price_rules configuradas pelo ADMIN, independencia total
+  Cliente x Prestador, snapshot imutavel no encerramento e geracao de
+  financial_transactions na mesma transacao.
+- [NAO] Liquidacao via Pix / lotes de repasse (doc 07 §4) — nao implementada.
+
+### FASE 8 — Administracao e Restricoes
+- [OK] Backend admin: CRUD de PriceRule com auditoria de alteracao (valor
+  anterior/novo/justificativa), listagem de coletas e pneus, cancelamento e
+  contestacao por ADMIN, consulta de audit_logs.
+- [NAO] Painel administrativo no Flutter (aplicativo unico nao tem telas admin).
+- [NAO] Modulo formal de restricao de prestadores (provider_restrictions) com
+  motivo, evidencias, prazo, admin responsavel e LGPD — previsto em doc 10 §4,
+  sem endpoints/fluxos concretos verificados.
+
+### FASE 9 — Seguranca e Auditoria
+- [OK] Hardening: Pydantic v2 com extra=forbid, rate limit em memoria,
+  limite 1 MiB, higiene de erros (anti-enumeracao 404 uniforme), headers HTTP.
+- [OK] Sem segredos no codigo-fonte (senhas com Argon2id; sem API keys).
+- [PAR] Auditoria imutavel existe para acoes criticas (price rules, cancelamento,
+  contestacao); trilha administrativa geral ainda parcial na pratica.
+- [PAR] Isolamento do PostgreSQL em rede privada: regra arquitetural, nao
+  verificavel localmente (sem banco real configurado).
+
+### FASE 10 — Operacao Offline e Sincronizacao
+- [OK] Outbox Pattern funcional: gravacao local imediata, envio em ordem,
+  X-Idempotency-Key igual ao id da operacao em TODAS as tentativas (retry sem
+  duplicar), classificacao de erro definitivo vs transitivo.
+- [OK] Backend com replay: mesma chave + mesma operacao devolve a resposta
+  armazenada sem re-executar; chave divergente = 409; chave alheia = 404.
+- [PAR] Persistencia local usa shared_preferences (JSON), enquanto os docs
+  09/11 mencionam SQLite/Drift/Isar. Funciona, mas NAO e banco relacional local.
+
+### FASE 11 — Testes de Integracao e Regras
+- [OK] 200 testes backend (estados, RBAC, financeiro, outbox, hardening, schema)
+  e 213 testes Flutter; analyze limpo.
+- [PAR] Testes de carga/concorrencia rodam apenas em SQLite (FOR UPDATE e
+  indices parciais mais fieis exigem PostgreSQL).
+
+### FASE 12 — Interface e Refinamento
+- [NAO] Polimento estetico nao iniciado (correto: estetica e a prioridade 5;
+  funcionalidade e seguranca vêm primeiro).
+
+=====================================================================
+5. ONDE PARAMOS EXATAMENTE (PONTO DE RETOMADA)
+=====================================================================
+
+- Commit base: 0f0af91 "VS_2.4" (tudo do VS 2.4 verificado no hard reset de auditoria).
+- Working tree atual:
+  * Modificados (NAO commitados): STATUS_DO_PROJETO.md e backend/README.md
+    (atualizados por pedido explicito — registram missoes 33-55.4, baseline dos
+    testes, escopo CANCELACAO e pendencias da auditoria).
+  * .gitignore modificado (linha Relatorio.txt removida — pendente de decisao).
+  * Relatorio.txt sem tracking (arquivo local nao commitado).
+  * Artefato de build versionado (meu_app_coleta_pneus/build/...dill.track.dill)
+    com diff — pendente de higiene git.
+- O fluxo principal funcionando ponta a ponta:
+  CLIENTE cria/declara -> PRESTADOR aceita -> desloca -> confere -> registra
+  pneus -> conclui -> finaliza (snapshot) -> CLIENTE contesta/cancela ou
+  visualiza (com a lacuna da secao 4 Fase 3).
+
+=====================================================================
+6. PENDENCIAS NOVAS IDENTIFICADAS NA AUDITORIA (APENAS RELATO)
+=====================================================================
+
+1. [FUNCIONAL - PRIORIDADE 1] Resumo/Comprovante do Cliente: o backend nao
+   entrega 'pneus'/'itens_conferidos' ao CLIENTE (backend/app/collections.py
+   linhas 271-289 e 375-388). Fecha o fluxo da doc 05 Etapa 6 §1. E o unico
+   problema funcional autenticado capaz de travar a operacao no campo.
+2. [TECNICA] Migration 003: colunas FK de collection_items_declared/checked
+   declaradas como VARCHAR(36) apontando para colunas UUID (com CHECK).
+   Padrao incomum; precisa validacao em PostgreSQL real antes de producao.
+3. [TECNICA] Concorrencia: SQLite ignora FOR UPDATE; os guardas de corrida da
+   suite usam replay por uq_idem_chave. Em PostgreSQL, FOR UPDATE obriga outra
+   semantica — precisa rodada real de concorrencia.
+4. [GIT] Higienizar repositorio: remover build/ versionados, decidir destino de
+   Relatorio.txt e commitar as edicoes de STATUS_DO_PROJETO.md / backend/README.md.
+
+=====================================================================
+7. RISCO PARA AS PROXIMAS ETAPAS (O QUE EVITAR)
+=====================================================================
+
+- NAO iniciar a Missao 56 sem antes confirmar a lista aprovada das pendencias;
+  escopo deve ser o menor possivel e focado na lacuna da secao 6 item 1.
+- NAO recriar Firebase/Firestore ou dependencias proprietarias do Render.
+- NAO tornar o DOT unico ou impedir repeticao de numero de fogo entre coletas.
+- NAO recalcular snapshot de coletas finalizadas quando a tabela de precos mudar.
+- NAO confiar no frontend para perfil, status, idade de DOT ou valores:
+  o backend e a autoridade absoluta (regra doc 03/AGRGs item 3).
+- NAO gravar senhas/tokens reais em arquivos do repositorio.
+- NAO fazer commit sem revisar o working tree (existem 3 areas sujas na secao 5).
+- NAO trocar shared_preferences por SQLite/Drift sem decisao e sem manter a
+  idempotencia com a MESMA chave entre tentativas.
+- NAO liberar testes sem rodar as tres verificacoes em ordem:
+  1) python -m pytest backend/tests (a partir da raiz);
+  2) flutter test;
+  3) flutter analyze. E opcional rodar na raiz flutter test e flutter analyze.
+
+=====================================================================
+8. PROXIMAS ETAPAS RECOMENDADAS (ORDEM SEGURA)
+=====================================================================
+
+### Missao 56 (proxima) — Fechar o contrato do Resumo/Comprovante do CLIENTE
+- [Backend] Incluir pneus conferidos (dot, marca, medida, numero_fogo,
+  numero_fogo_ilegivel, idade_calculada_anos, alerta_idade_obsoleto) na
+  resposta de obter_coleta para o dno CLIENTE da coleta FINALIZADA, mantendo
+  anti-enumeracao (nao-dono continua 404 indistinguivel) e PRESTADOR
+  bloqueado neste endpoint.
+- [Teste] Novo teste backend: dono ve pneus; nao-dono 404; PRESTADOR 403/404.
+- [Verificacao] pytest + flutter test + flutter analyze.
+- [Evidencia] Relatorio_Missao_56_1.md + commit VS_2.5.
+
+### Missao 57 — Validacao da DDL em PostgreSQL real
+- Subir Postgres (Docker) com as migrations 001-005, rodar a suite real de
+  integracao e corrigir eventuais incompatibilidades (ex.: VARCHAR(36) x UUID,
+  FOR UPDATE, indice parcial de numero de fogo).
+
+### Missao 58 — Higiene e baseline do repositorio
+- Remover build/ versionados, definir destino do Relatorio.txt, commitar as
+  edicoes de STATUS_DO_PROJETO.md e backend/README.md com mensagem clara.
+
+### Decisoes de negocio a formalizar (antes de iniciar Fases 7/8 completas)
+- Assinatura digital no encerramento (doc 05, pendente).
+- Regra final de tolerancia de divergencia de quantidade (doc 05, pendente).
+- Liquidao Pix manual vs integracao com gateway (doc 07 §4, pendente).
+- Refresh token (doc 08 §3.1) e banco local SQLite/Drift (docs 09/11).
+- Painel administrativo Flutter (Fase 8).
+
+=====================================================================
+9. CHECKLIST DE CONFORMIDADE (AGENTS §6) — APLICADO A ESTA AUDITORIA
+=====================================================================
+
+- [X] A solucao funciona e foi testada? — Sim; baseline 200 + 213 + analyze.
+- [X] Backend valida regras de negocio independente do front? — Sim (RBAC,
+  estados, pneus, financeiro, idempotencia).
+- [X] Nao existem secrets gravados em arquivos de codigo? — Verificado.
+- [X] Algum doc base (01-12) foi contradito? — Nao neste relatorio; divergencias
+  listadas (secao 4) sao escopos nao entregues, nao contradicoes de regra.
+- [X] Ordem de prioridade respeitada? — Sim (funcionamento -> seguranca ->
+  consistencia -> testes -> estetica).
+
+=====================================================================
+10. PONTO DE RETOMADA OFICIAL
+=====================================================================
+
+O projeto deve ser retomado a partir de:
+  Missao 56 — Conclusao do contrato do Resumo/Comprovante do CLIENTE
+  (exposicao segura dos pneus conferidos ao CLIENTE no backend),
+  sobre o commit 0f0af91 "VS_2.4" (baseline verde).
+
+Proxima missao recomendada: Missao 56 — "Resumo/Comprovante do Cliente:
+expor pneus conferidos via backend para o dono CLIENTE da coleta FINALIZADA".
+
+ATENCAO: Nenhuma implementacao foi iniciada por este relatorio. A Missao 56
+so deve ser executada apos confirmacao explicita do responsavel pelo projeto.

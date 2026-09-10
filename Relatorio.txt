@@ -1,0 +1,83 @@
+===============================================================================
+RELATÓRIO DA DOCUMENTAÇÃO BASE DO PROJETO - COLETA E TRANSPORTE DE PNEUS
+===============================================================================
+
+1. ARQUIVOS CRIADOS NA RAIZ DO PROJETO:
+-------------------------------------------------------------------------------
+- 01_VISAO_DO_PRODUTO.md
+- 02_ARQUITETURA.md
+- 03_REGRAS_DE_NEGOCIO.md
+- 04_PERFIS_E_PERMISSOES.md
+- 05_FLUXO_DA_COLETA.md
+- 06_MODELO_DE_DADOS.md
+- 07_FINANCEIRO.md
+- 08_SEGURANCA.md
+- 09_OFFLINE_E_SINCRONIZACAO.md
+- 10_ADMINISTRACAO_E_AUDITORIA.md
+- 11_ROADMAP.md
+- 12_DECISOES_ARQUITETURAIS.md
+- AGENTS.md
+
+-------------------------------------------------------------------------------
+2. RESUMO DAS DECISÕES DOCUMENTADAS:
+-------------------------------------------------------------------------------
+- Arquitetura Base: App Único Multiplataforma em Flutter/Dart (Android, iOS, Web),
+  REST API em FastAPI (Python 3.11+) e banco PostgreSQL 15+. Aplicação 100%
+  conteinerizada via Docker e agnóstica a provedor (hospedagem inicial no Render).
+
+- Backend como Autoridade: O FastAPI é a autoridade única de validações,
+  permissões RBAC, regras financeiras e cálculos de idade de pneus. O aplicativo
+  Flutter é tratado como cliente não-confiável.
+
+- Perfis e Permissões: Separação estrita entre CLIENTE, PRESTADOR e ADMINISTRADOR
+  gerenciada por middleware JWT com verificação de papéis no banco.
+
+- Fluxo da Coleta: Cliente declara a carga e o prestador confere presencialmente
+  no aplicativo sem necessidade de re-digitação.
+
+- Registro Triplo de Quantidades: Quantidade Declarada, Quantidade Conferida e
+  Quantidade Efetivamente Coletada com exigência de foto e justificativa para
+  divergências.
+
+- Identificação dos Pneus e Regras de DOT:
+  * QR Code não é obrigatório. Uso de Número de Fogo, Série e DOT (Semana/Ano).
+  * O DOT NÃO é identificador único. Permite-se múltiplos pneus com o mesmo DOT.
+  * Cálculo de idade e alerta visual (indicador vermelho) para pneus com idade
+    igual ou superior a 7 anos (limite configurável no backend).
+
+- Modelo Financeiro Desacoplado:
+  * Condições comerciais do cliente 100% independentes do valor pago ao prestador.
+  * Remuneração do prestador por volume/quantidade (ex: 247 pneus x R$ 2,50).
+  * Snapshots imutáveis de valores gravados no encerramento da coleta.
+  * Dashboard mobile-first do prestador com reinício de acumuladores no 1º dia do
+    mês (preservando todo o histórico no banco de dados).
+
+- Operação Offline-First:
+  * Persistência local no Flutter com Outbox Pattern (fila de sincronização).
+  * Idempotência no FastAPI via cabeçalho X-Idempotency-Key (UUIDv4) para
+    evitar duplicação em conexões instáveis.
+
+- Administração e Restrições:
+  * Proibição de blacklists informais/irreversíveis. Toda restrição exige motivo,
+    evidências, admin responsável, prazo, histórico e conformidade com LGPD.
+  * Auditoria em servidor (audit_logs no PostgreSQL) como fonte primária.
+    Notificações externas (WhatsApp/E-mail) são alertas secundários.
+
+- Estratégia de Desenvolvimento: Roadmap em 12 fases sequenciais priorizando:
+  Funcionamento -> Segurança -> Consistência -> Testes -> Estética.
+
+- Regras Permanentes para Agentes de IA (AGENTS.md):
+  * Regra de não-contradição: alertar o usuário e não alterar silenciosamente
+    regras estabelecidas nos documentos base da raiz.
+
+-------------------------------------------------------------------------------
+3. DECISÕES PENDENTES IDENTIFICADAS (DECISÃO PENDENTE):
+-------------------------------------------------------------------------------
+- Prazo em dias para contestação da coleta efetuada pelo cliente (03_REGRAS_DE_NEGOCIO.md).
+- Seleção do pacote de banco local do Flutter para a fila Outbox (Drift vs Isar vs Hive) (02_ARQUITETURA.md).
+- Provedor oficial da API de mensagens para notificações de WhatsApp (010_ADMINISTRACAO_E_AUDITORIA.md).
+- Provedor de armazenamento de objetos em produção para fotos (S3 / Cloudflare R2 / Supabase Storage) (02_ARQUITETURA.md).
+- Fórmula e pesos exatos para cálculo da pontuação de reputação do prestador (03_REGRAS_DE_NEGOCIO.md).
+- Automação via gateway de pagamento para liquidação Pix aos prestadores (07_FINANCEIRO.md).
+- Obrigatoriedade de Autenticação em 2 Fatores (2FA/OTP) para usuários (08_SEGURANCA.md).
+===============================================================================

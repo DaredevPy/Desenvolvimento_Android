@@ -385,7 +385,29 @@ def obter_coleta(
         # 404 uniforme: inexistente e alheio são indistinguíveis (anti-enumeração).
         if coleta is None or coleta.client_id != client.id:
             raise HTTPException(status_code=404, detail=NAO_ENCONTRADO)
-        return _resposta(coleta)
+        resposta = _resposta(coleta)
+        if coleta.status == "FINALIZADA":
+            # Missão 56: CLIENTE dono da FINALIZADA recebe os pneus conferidos
+            # para o Resumo/Comprovante (doc 05 Etapa 6 §1; doc 06 §3).
+            pneus = db.scalars(
+                select(Tire)
+                .where(Tire.collection_id == coleta_id)
+                .order_by(Tire.created_at.asc())
+            ).all()
+            resposta["pneus"] = [
+                {
+                    "id": pneu.id,
+                    "dot": pneu.dot,
+                    "numero_fogo": pneu.numero_fogo,
+                    "numero_fogo_ilegivel": pneu.numero_fogo_ilegivel,
+                    "idade_calculada_anos": float(pneu.idade_calculada_anos),
+                    "alerta_idade_obsoleto": pneu.alerta_idade_obsoleto,
+                    "marca": pneu.marca,
+                    "medida": pneu.medida,
+                }
+                for pneu in pneus
+            ]
+        return resposta
 
 
 @router.post("/{coleta_id}/aceitar")

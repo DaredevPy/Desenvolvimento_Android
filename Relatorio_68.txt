@@ -1,0 +1,216 @@
+RELATORIO 68 — PANORAMA DO ESTADO DAS ETAPAS E PONTO DE RETOMADA (POS MISSAO 56)
+=====================================================================
+
+DATA: 2026-09-10
+MISSAO: Atualizacao de estado apos a conclusao da Missao 56
+MODO: APENAS REGISTRO DE ESTADO E ROTEIRO — NENHUMA ALTERACAO DE CODIGO
+
+=====================================================================
+1. RESUMO EXECUTIVO
+=====================================================================
+
+### Posicao Atual do Projeto
+- Ultima missao concluida: Missao 56 — Resumo/Comprovante do Cliente
+  (expor pneus conferidos via backend para o CLIENTE dono da coleta FINALIZADA)
+- Commit anterior de referencia: 0f0af91 "VS_2.4"
+- Baseline verificada APOS a Missao 56:
+  * Backend: 204 testes passando (200 anteriores + 4 novos)
+    comando: python -m pytest backend/tests
+  * Flutter: 213 testes passando (flutter test)
+  * Statico: flutter analyze "No issues found"
+- Banco: PostgreSQL continua indisponivel localmente; suite em SQLite in-memory.
+- Nota: a Missao 56 NAO foi commitada ainda (aguarda autorizacao).
+  O working tree contem as alteracoes da Missao 56 + os arquivos/jk updates
+  de missoes anteriores ainda pendentes de commit (ver secao 5).
+
+### O Que Este Relatorio Entrega
+1) O que a Missao 56 mudou e onde o projeto esta agora.
+2) Onde paramos exatamente (ponto de retomada atualizado).
+3) Pendencias fechadas e pendencias remanescentes.
+4) Riscos a evitar nas proximas etapas.
+5) Ordem recomendada para as proximas missoes.
+
+=====================================================================
+2. MAPEAMENTO DE NUMERACAO (IMPORTANTE PARA NAO SE PERDER)
+=====================================================================
+
+- O numero do arquivo Relatorio_N.txt NAO e igual ao numero da missao:
+  * Relatorio_44.txt = Missao 33 (Resumo/Comprovante do Cliente — tela)
+  * Relatorio_46.txt = Missao 34 (Contestacao no Flutter)
+  * Relatorio_47.txt = Missao 35 (Analise Numero de Fogo / DOT)
+  * Relatorio_48.txt = Missao 36 (Migration 004 — unico parcial numero de fogo)
+  * Relatorio_52.txt = Missoes 39/40 (Remocao do legado Firebase/Firestore)
+  * Relatorio_66.txt = Missao 53 (Status consolidado das 11 decisoes)
+  * Relatorio_67.txt = Missao 56 (Auditoria de estado pre-implementacao)
+- Missoes 54 a 55.4 foram registradas em RELATORIO_MISSAO_55*.md.
+- A Missao 56 (esta que acabou de concluir) ainda NAO possui arquivo
+  RELATORIO_MISSAO_56_1.md — pendente de geracao/commit na proxima missao.
+
+=====================================================================
+3. O QUE A MISSAO 56 ENTREGOU (MUDANCA FUNCIONAL)
+=====================================================================
+
+### Problema corrigido
+- GET /api/v1/collections/{id} (consulta da coleta pelo CLIENTE) nao retornava
+  os pneus conferidos; a tela TelaClienteResumoColeta exibia
+  "Nenhum pneu conferido registrado" mesmo com pneus gravados no banco.
+
+### Arquivos alterados
+- backend/app/collections.py (modificado)
+- backend/tests/test_resumo_cliente.py (criado)
+
+### Contrato do endpoint (pos-Missao 56)
+- Requisitos preservados: autenticacao, RBAC (CLIENTE-only), anti-enumeracao
+  (404 uniforme p/ alheia/inexistente), ownership, bloqueio do PRESTADOR (403).
+- Para CLIENTE dono + coleta FINALIZADA, a resposta agora inclui o campo:
+  pneus: [ { id, dot, marca, medida, numero_fogo, numero_fogo_ilegivel,
+             idade_calculada_anos, alerta_idade_obsoleto } ]
+  ordenados por created_at.
+- Coletas nao-FINALIZADA continuam sem o campo pneus (gate por status).
+- Nenhuma migration criada; banco intacto; sem mudanca de regras.
+
+### Testes novos (prova do contrato)
+1. Dono + FINALIZADA -> 200 com pneus completos.
+2. Nao-dono -> 404 identico a UUID inexistente e sem vazamento.
+3. PRESTADOR -> 403 sem pneus na resposta.
+4. Dono + nao-FINALIZADA -> 200 sem a chave pneus.
+
+=====================================================================
+4. BASELINE VERIFICADA E GARANTIA DE ESTABILIDADE
+=====================================================================
+
+- python -m pytest backend/tests ........ 204 passed (308.89 s)
+- flutter test .......................... 213 passed
+- flutter analyze ....................... No issues found
+- Nenhuma regressao identificada nas suítes existentes (todas passaram).
+- Fluxo principal agora funciona ponta a ponta tambem no Resumo do CLIENTE:
+  CLIENTE cria/declara -> PRESTADOR aceita -> desloca -> confere -> registra
+  pneus -> conclui -> finaliza (snapshot) -> CLIENTE visualiza pneus conferidos
+  e pode contestar.
+
+=====================================================================
+5. ONDE PARAMOS EXATAMENTE (PONTO DE RETOMADA ATUALIZADO)
+=====================================================================
+
+### Pontos de codigo
+- Implementacao da Missao 56 no WORKING TREE (nao commitada):
+  * backend/app/collections.py (obter_coleta enriquecido)
+  * backend/tests/test_resumo_cliente.py (novo arquivo de testes)
+- Working tree geral (continua pendente de decisao/commit):
+  * STATUS_DO_PROJETO.md e backend/README.md (edicoes da auditoria)
+  * .gitignore com linha Relatorio.txt removida
+  * Relatorio.txt sem tracking
+  * Artefatos de build versionados (meu_app_coleta_pneus/build/...)
+  * Relatorio_67.txt e Relatorio_68.txt (novos, sem tracking)
+
+### Proximo passo imediato (nao executado)
+- Gerar RELATORIO_MISSAO_56_1.md (evidencia da missao) e, mediante autorizacao,
+  commitar "VS_2.5" com: collections.py + test_resumo_cliente.py
+  + evidencia(s). Nada foi commitado ate aqui.
+
+=====================================================================
+6. PENDENCIAS FECHADAS NA MISSAO 56
+=====================================================================
+
+- [FECHADA] Resumo/Comprovante do CLIENTE: pneus conferidos agora chegam ao
+  CLIENTE dono da coleta FINALIZADA com todos os campos usados pela tela.
+- [FECHADA] Garantia de seguranca no novo contrato (RBAC, anti-enumeracao,
+  ownership, PRESTADOR bloqueado) comprovada por testes.
+
+=====================================================================
+7. PENDENCIAS REMANESCENTES (NAO CORRIGIDAS — FORA DO ESCOPO DA 56)
+=====================================================================
+
+1. Contrato 'itens_conferidos' (resumo de quantidades conferida/coletada,
+   justificativa e fotos) ainda nao fica disponivel no payload do CLIENTE.
+   A tela atual depende apenas de pneus, mas a documentacao (doc 05 Etapa 6)
+   preve que o cliente visualize quantidades conferidas/coletadas e fotos.
+   DECISAO: encerrar a Missao 56 so com pneus, ou complementar em missao curta
+   futura (ex: Missao 56.1 ou 57).
+2. Tela TelaClienteResumoColeta bloqueia o resumo quando a coleta entra em
+   CONTESTADA (status != FINALIZADA) — comportamento pre-existente; decidir se
+   mediação deve ver o resumo.
+3. Validacao da DDL em PostgreSQL real (migrations 001-005, VARCHAR(36) x UUID
+   na migration 003, FOR UPDATE, indice parcial de numero de fogo).
+4. Higiene do git (build/ versionados, destino do Relatorio.txt, commit das
+   edicoes de STATUS_DO_PROJETO.md e backend/README.md).
+5. Decisoes de negocio em aberto (docs): assinatura digital, tolerancia de
+   divergencia, liquidacao Pix, refresh token, banco local SQLite/Drift,
+   painel administrativo Flutter.
+6. Flutter: nao houve alteracao de codigo no app nesta missao (a tela ja
+   consumia o campo pneus corretamente).
+
+=====================================================================
+8. RISCOS PARA AS PROXIMAS ETAPAS (O QUE EVITAR)
+=====================================================================
+
+- NAO commitar sem revisar o working tree (ha varias areas sujas; a Missao 56
+  deve ser commitada separadamente das edicoes de documentacao se possivel).
+- NAO recriar Firebase/Firestore ou dependencias proprietarias do Render.
+- NAO tornar o DOT unico nem impedir numero de fogo repetido entre coletas.
+- NAO recalcular snapshot de coletas finalizadas quando a tabela de precos mudar.
+- NAO confiar no frontend para perfil, status, idade de DOT ou valores:
+  o backend e a autoridade absoluta.
+- NAO gravar senhas/tokens reais em arquivos do repositorio.
+- NAO trocar shared_preferences por SQLite/Drift sem decisao e sem manter a
+  MESMA chave de idempotencia entre tentativas.
+- NAO liberar missao sem rodar as tres verificacoes (pytest backend, flutter
+  test, flutter analyze).
+- Estetica continua sendo a prioridade final; funcionalidade e seguranca vem antes.
+
+=====================================================================
+9. PROXIMAS ETAPAS RECOMENDADAS (ORDEM SEGURA)
+=====================================================================
+
+### Passo A — Encerramento da Missao 56 (imediato, mediante autorizacao)
+- Gerar RELATORIO_MISSAO_56_1.md (evidencia).
+- Atualizar STATUS_DO_PROJETO.md com a Missao 56 concluida e novo baseline.
+- Commit VS_2.5: collections.py + test_resumo_cliente.py + evidencia.
+- (Opcional) Decidir se itens_conferidos entra no contrato do CLIENTE agora.
+
+### Missao 57 — Validacao da DDL em PostgreSQL real
+- Subir Postgres (Docker), aplicar migrations 001-005, rodar a suite real de
+  integracao e corrigir incompatibilidades (VARCHAR(36) x UUID, FOR UPDATE,
+  indice parcial de numero de fogo).
+
+### Missao 58 — Higiene e baseline do repositorio
+- Remover build/ versionados, decidir destino do Relatorio.txt e commitar as
+  edicoes de STATUS_DO_PROJETO.md / backend/README.md.
+
+### Decisoes de negocio a formalizar (antes de Fases 7/8 completas)
+- itens_conferidos no Resumo do CLIENTE (se decidido no Passo A).
+- Assinatura digital no encerramento (doc 05).
+- Tolerancia de divergencia de quantidade (doc 05).
+- Liquidacao Pix manual vs integracao (doc 07 §4).
+- Refresh token (doc 08 §3.1) e banco local SQLite/Drift (docs 09/11).
+- Painel administrativo Flutter (Fase 8).
+
+=====================================================================
+10. CHECKLIST DE CONFORMIDADE (AGENTS §6) — APLICADO A ESTA ATUALIZACAO
+=====================================================================
+
+- [X] A solucao funciona e foi testada? — Sim (204 + 213 + analyze).
+- [X] Backend valida regras de negocio independente do front? — Sim.
+- [X] Nao existem secrets gravados em arquivos de codigo? — Verificado.
+- [X] Algum doc base (01-12) foi contradito? — Nao; a Missao 56 implementou
+      o que o doc 05 Etapa 6 §1 ja previa.
+- [X] Ordem de prioridade respeitada? — Sim (funcionamento -> seguranca ->
+      consistencia -> testes -> estetica).
+
+=====================================================================
+11. PONTO DE RETOMADA OFICIAL
+=====================================================================
+
+O projeto deve ser retomado a partir de:
+  Encerramento administrativo da Missao 56 (gerar evidencia RELATORIO_MISSAO_56_1.md,
+  atualizar STATUS_DO_PROJETO.md e commitar "VS_2.5" com as alteracoes da missao,
+  mediante autorizacao explicita).
+
+Em seguida, a proxima missao recomendada:
+  Missao 57 — Validacao da DDL em PostgreSQL real (migrations 001-005)
+  e, na sequencia, Missao 58 — Higiene e baseline do repositorio.
+
+ATENCAO: Este relatorio NAO autoriza nenhuma implementacao. Nenhuma alteracao
+de codigo foi feita para produzir este arquivo; as mudancas da Missao 56 ja
+existentes no working tree aguardam autorizacao para evidencia, atualizacao de
+documentacao e commit.
