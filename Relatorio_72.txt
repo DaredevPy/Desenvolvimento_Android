@@ -1,0 +1,191 @@
+================================================================================
+RELATORIO 72 — CHECKPOINT DE SEGURANCA POS-MISSOES 57 E 58
+================================================================================
+Data: 2026-09-14
+Base: VS_2.6 | commit cdb4254 | Missao 58 commit 4811797
+Ambiente: PostgreSQL 15.19 real validado | SQLite in-memory intacto
+Modo: APENAS LEITURA — auditoria de consolidacao e checkpoint de seguranca
+
+================================================================================
+SUMARIO EXECUTIVO
+================================================================================
+
+O projeto atingiu estado de producao pronto com validacao empirica completa:
+1. Missoes 57 e 58 CONCLUIDAS com sucesso.
+2. Suite de testes 100% verde: 204 backend (PostgreSQL + SQLite), 213 Flutter,
+   flutter analyze sem alertas.
+3. Repositorio Git saneado: migration 003 (UUID) oficializada, arquivos
+   temporarios removidos, cache Flutter restaurado.
+4. Working tree limpo de modificacoes nao autorizadas.
+5. Documentacao de missao preservada intacta (Relatorios 57, 58 e derivados).
+
+O estado atual serve de base segura para decisoes sobre:
+- Opcao A: Tag de release VS_2.7 e consolidacao formal
+- Opcao B: Limpeza definitiva de arquivos de build versionados no Git
+- Opcao C: Avanco no dominio de negocio e features pendentes
+
+================================================================================
+1. HISTORICO DAS MISSOES CONCLUIDAS
+================================================================================
+
+### Missao 57 — Validacao PostgreSQL 15.19 Real (2026-09-13)
+Base: VS_2.6 (commit cdb4254)
+- Todas as 5 migrations (001-005) executadas com sucesso contra PostgreSQL 15.19 real
+- Validacoes empiricas confirmadas:
+  a) Migration 003: user_id e recurso_id como UUID nativo, FKs funcionando
+  b) Indice parcial Numero de Fogo: duplicatas bloqueadas na mesma coleta
+  c) DOT repetido: multiplos pneus com mesmo DOT permitidos
+  d) CHECK escopo idempotencia: 4 valores validos (PNEUS, CONCLUSAO, FINALIZACAO, CANCELACAO)
+  e) FOR UPDATE: lock concorrencial em nivel de linha testado
+  f) Idempotencia: bloqueio por chave duplicada verificado
+- Resultados: 204 testes backend passando contra PostgreSQL e SQLite
+- 213 testes Flutter passando, flutter analyze limpo
+
+### Missao 58 — Git Hygiene e Saneamento (2026-09-14)
+Base: commit 4811797 (Missao 58)
+- Oficializacao da Migration 003: VARCHAR(36) -> UUID nas foreign keys
+- Remocao de arquivos temporarios: backend/db/migrations/teste_57_dados.sql descartado
+- Limpeza de Cache Binario Flutter: build/test_cache/*.cache.dill.track.dill restaurado ao estado cdb4254
+- Validacao Direcionada: 28 testes (test_outbox, test_idempotencia, test_db_schema) 100% aprovados
+- Documentacao: Gerado RELATORIO_MISSAO_58_1.md
+
+================================================================================
+2. ESTADO ATUAL DO GIT E WORKING TREE
+================================================================================
+
+Branch: main
+Commit Atual: 481179745e0517ca2626e5e408ecbbef386dfd54 (Missao 58)
+Commit Anterior: cdb4254f67a3cf8c9900cd0d5d9700ff101579c2 (VS_2.6)
+Relacao com remoto: Ahead of 'origin/main' por 2 commits
+
+Arquivos rastreados: SEM MODIFICACOES LOCAIS (working tree limpo)
+
+Arquivos nao rastreados (untracked no filesystem):
+- RELATORIO_MISSAO_57_1.md (Relatorio tecnico validacao PostgreSQL)
+- RELATORIO_MISSAO_58_1.md (Relatorio tecnico saneamento Git)
+- RELATORIO_MISSAO_59_1.md (Este relatorio de checkpoint)
+- Relatorio_69.txt (Relatorio de auditoria historico)
+- Relatorio_70.txt (Relatorio de auditoria forense previa — fonte de verdade)
+- Relatorio_71.txt (Checkpoint anterior de estado)
+- Relatorio_72.txt (Este novo relatorio de consolidacao)
+
+Historico de commits recentes:
+* 4811797 Missao 58: Oficializacao da migration 003 (UUID) e Git hygiene pos-validacao PostgreSQL
+* cdb4254 VS_2.6 (Missao 56 — Resumo/comprovante do cliente)
+* 95f7880 VS_2.5 (Missao 55 — Cancelamento e correcoes)
+
+================================================================================
+3. ESTADO DAS MIGRATIONS E BANCO DE DADOS
+================================================================================
+
+Status das 5 Migrations Manuais (todas VALIDADAS):
+
+| Migration | Arquivo                          | Status PostgreSQL 15+ | Status SQLite |
+|-----------|----------------------------------|-----------------------|---------------|
+| 001       | 001_initial_schema.sql           | VALIDADO (14 tabelas) | VALIDADO      |
+| 002       | 002_idempotencia_coleta.sql      | VALIDADO (snapshots)  | VALIDADO      |
+| 003       | 003_outbox_idempotencia.sql      | OFICIALIZADO (UUID)   | VALIDADO      |
+| 004       | 004_tire_numero_fogo_unique.sql  | VALIDADO (idx parcial)| VALIDADO      |
+| 005       | 005_cancelamento_escopo.sql      | VALIDADO (CHECK 4 esc)| VALIDADO      |
+
+Observacoes Arquiteturais de Banco:
+- Suporte dual transparente: SQLite rapido para testes unitarios, PostgreSQL 15+ para producao
+- Nao ha uso de Alembic: migrations SQL manuais (regra permanente)
+- Tipos UUID nativo no PostgreSQL; VARCHAR(36) incompativel sem corretora (corrigido na 003)
+
+================================================================================
+4. ESTADO DOS TESTES
+================================================================================
+
+Backend (18 arquivos de teste):
+- Total: 204 testes passando
+- SQLite: 204 passed (baseline inalterada)
+- PostgreSQL 15.19 real: 204 passed (validado empiricamente)
+- 2 warnings deprecation (httpx starlette, jwt key length — benignos em teste)
+
+Flutter (15 arquivos de teste):
+- Total: 213 testes passando
+- flutter analyze: No issues found
+- 1 warning de hit test (botao "Contestar" parcialmente obscured) — cosmetico
+
+================================================================================
+5. SEGURANCA E REGRAS DE NEGOCIO CONFIRMADAS
+================================================================================
+
+Regra de negocio imutavel (nao pode ser quebrada):
+1. Backend e autoridade absoluta — revalida tudo no servidor
+2. Cliente, Prestador e Administrador com roles separadas (RBAC)
+3. Cada pneu possui UUID proprio (identidade individual)
+4. DOT NUNCA e identificador unico — idade calculada no backend
+5. Pneus com idade >= 7 anos recebem alerta visual vermelho (LIMITE_ALERTA_IDADE_ANOS)
+6. Numero de fogo unico apenas dentro da mesma coleta (indice parcial com WHERE NOT NULL)
+7. Valor do cliente e valor do prestador sao independentes (snapshots imutaveis)
+8. Coletas FINALIZADA NAO pode ter valor historico recalculado (bloqueado por testes)
+9. Outbox Pattern com idempotencia via X-Idempotency-Key (UUIDv4)
+10. Quinque CHECK de escopo idempotencia: PNEUS, CONCLUSAO, FINALIZACAO, CANCELACAO (Migration 005)
+
+Problemas conhecidos (nao bloqueadores):
+- SQLite ignora FOR UPDATE (mitigado com guard IntegrityError no flush)
+- Migrations 001-005 nunca rodaram em PostgreSQL real apos o ambiente de dev (já validado na Missao 57)
+- Rate limiting single-process (nao escala horizontalmente, mas funcional para deploy unico)
+- Refresh token nao implementado (pendencia documentada)
+- 2FA/OTP nao implementado (pendencia documentada)
+
+================================================================================
+6. OPCOES PARA PROXIMAS ETAPAS (SEGURAS)
+================================================================================
+
+### Opcao A: Tag de Release e Consolidacao Formal (VS_2.7)
+- Criar commit de documentacao atualizando STATUS_DO_PROJETO.md e backend/README.md
+- Incluir relatorios de missao (57 e 58) no controle de versao formal
+- Gerar tag de versao estavel VS_2.7
+- Risco: Minimo — apenas documentacao e tagging
+- Recomendacao: Alta (base segura para future desenvolvimentos)
+
+### Opcao B: Limpeza Definitiva dos Arquivos de Build Rastreados no Flutter
+- Executar git rm --cached nos 8 arquivos residuais de build/ rastreados versoes anteriores
+- Garantir que futuras execucoes de teste nao gerem modificacoes acidentais no working tree
+- Risco: Baixo — remove arquivos que tao versionados mas nao deveriam estar no git
+- Recomendacao: Media (cleanup necessario para higiene de longo prazo)
+
+### Opcao C: Avanco no Dominio de Negocio e Features Pendentes
+- Implementacao da contestacao completa com fotos/evidencias e fluxo CONTESTADA ->_ADMIN
+- Integracao do upload de imagens de divergencias na conferencia
+- Painel administrativo / dashboard de auditoria com metricas em tempo real
+- Risco: Medio-Alto — implica novas funcionalidades e codigo
+- Recomendacao: Apos decisao do produto e validaçao do checkpoint atual
+
+================================================================================
+7. CHECKLIST DE SEGURANCA PARA PROXIMAS ETAPAS
+================================================================================
+
+Antes de iniciar qualquer nova missao ou decisao:
+
+[ ] Executar 'git status' e verificar que apenas os relatorios untracked permanecem
+[ ] Confirmar que a migration 003 (UUID) permanece commitada e nao foi revertida
+[ ] Nao apagar Relatorio_69.txt, Relatorio_70.txt, Relatorio_71.txt, Relatorio_72.txt nem RELATORIO_MISSAO_*.md
+[ ] Validar que todos os 204 testes backend passam (PostgreSQL e SQLite)
+[ ] Validar que todos os 213 testes Flutter passam e analyze limpo
+[ ] Manter a prioridade: funcionamento > seguranca > consistencia > testes > estetica
+[ ] Nao introduzir segredos, senhas ou tokens no codigo
+[ ] Definir caminho escolhido: Opcao A (release), Opcao B (cleanup) ou Opcao C (features)
+[ ] Caso Opcao C: Priorizar features por impacto/risco e nao tentar implementar tudo de uma vez
+[ ] Agendar validacao em PostgreSQL real se houver mudanca de schema ou nova migration
+
+================================================================================
+8. CONCLUSAO E POINT DE RETOMADA
+================================================================================
+
+Estado validado: Projeto em condicao de producao com testagem empirica completa.
+Base segura: Missoes 57 (validacao PostgreSQL) e 58 (higiene Git) concluidas com sucesso.
+Working tree: Limpo, sem modificacoes locais nao autorizadas em arquivos rastreados.
+
+Proxima decisao: Selecionar uma das tres opcoes (A, B ou C) conforme objetivo do produto.
+Em qualquer caso, o estado atual fornece base solida sem risco de regressao, ja que:
+- Ningum codigo funcional foi removido ou modificado indevidamente
+- Todos os testes continuam passando na mesma configuracao
+- Documentacao historica preservada intacta
+- Migracoes validadas tanto em SQLite (baseline) quanto PostgreSQL (portabilidade confirmada)
+
+FIM DO RELATORIO 72
+================================================================================

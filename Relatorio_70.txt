@@ -1,0 +1,676 @@
+================================================================================
+RELATORIO 70 — AUDITORIA FORENSE DO ESTADO REAL DA PLATAFORMA
+================================================================================
+Data: 2026-09-13
+Modo: APENAS LEITURA — nenhuma alteracao foi feita nesta auditoria
+Baseline informada: VS_2.6 | commit cdb4254 | Backend 204 | Flutter 213
+================================================================================
+
+SUMARIO EXECUTIVO
+--------------------------------------------------------------------------------
+O repositorio encontra-se funcional e alinhado com a baseline pos-Missao 56
+(VS_2.6, commit cdb4254). Backend: 204 testes passando. Flutter: 213 testes
+passando. flutter analyze: sem alertas. Working tree: 1 arquivo modificado
+(migration 003, alteracao local nao commitada para correcao de tipo
+VARCHAR->UUID em foreign keys).
+
+Fluxo ponta-a-ponta FUNCIONANDO: CLIENTE cria -> PRESTADOR aceita -> desloca
+-> confere -> registra pneus -> finaliza -> CLIENTE visualiza e pode contestar.
+Outbox com idempotencia completa. Backend como autoridade absoluta.
+
+================================================================================
+1. ESTADO GIT
+================================================================================
+
+Branch:              main
+Commit:              cdb4254f67a3cf8c9900cd0d5d9700ff101579c2 (VS_2.6)
+Data do commit:      2026-09-10 20:06:46 -0300
+Commit anterior:     95f7880 (VS_2.5)
+Working tree:        SUJO (1 arquivo modificado)
+Alteracoes locais:   backend/db/migrations/003_outbox_idempotencia.sql
+                     (VARCHAR(36)->UUID em user_id/recurso_id)
+Arquivos nao rastreados: Relatorio_69.txt
+Ahead of origin:     1 commit
+
+DIFERENCA EM RELACAO AO VS_2.6 INFORMADO:
+O baseline informa "Working tree: limpo". O estado atual tem 1 arquivo
+modificado (migration 003) e 1 arquivo nao rastreado (Relatorio_69.txt).
+A modificacao na migration 003 e uma correcao de portabilidade
+(VARCHAR(36)->UUID para foreign keys compativeis com PostgreSQL).
+
+================================================================================
+2. ESTADO DO CODIGO
+================================================================================
+
+2.1 BACKEND (14 modulos, 14 tabelas, 5 migrations)
+-----------------------------------------------------
+
+Modulo               Arquivo                        Estado
+----------           ---------                      ------
+Entrypoint           app/main.py (81 linhas)        COMPLETO
+Autenticacao         app/auth.py (112 linhas)       COMPLETO
+Coletas              app/collections.py (918 linh)  COMPLETO
+Pricing              app/pricing.py (340 linhas)    COMPLETO
+RBAC                 app/rbac.py (32 linhas)        COMPLETO
+Ownership            app/ownership.py (64 linhas)   PARCIAL (endpoints temp)
+Seguranca            app/security.py (50 linhas)    COMPLETO
+Admin                app/admin.py (270 linhas)      COMPLETO
+Perfis               app/profiles.py (198 linhas)   COMPLETO
+Validacao            app/validacao.py (14 linhas)   COMPLETO
+Rate Limit           app/rate_limit.py (40 linhas)  COMPLETO (single-process)
+Sessao DB            db/session.py (26 linhas)      COMPLETO
+Modelos              db/models/ (14 arquivos)       COMPLETO
+Migrations           db/migrations/ (10 arquivos)   COMPLETO
+
+2.2 FLUTTER (3 modulos, 18 arquivos lib, 15 arquivos test)
+-----------------------------------------------------------
+
+Modulo               Arquivo                        Estado
+----------           ---------                      ------
+Entrypoint           lib/main.dart (164 linhas)     COMPLETO
+API Service          lib/core/api/api_service.dart  COMPLETO
+Modelo               lib/core/models/usuario.dart   NAO UTILIZADO
+Sessao               lib/core/sessao/servico_sessao COMPLETO
+Armazenamento        lib/core/sessao/armazenamento_ COMPLETO
+Login                lib/core/sessao/tela_login     COMPLETO
+Outbox               lib/core/outbox/ (4 arquivos)  COMPLETO
+Cliente              lib/cliente/screens/ (3 arq)   COMPLETO
+Prestador            lib/prestador/ (5 arquivos)    COMPLETO
+Admin Flutter        (AUSENTE)                      NAO IMPLEMENTADO
+
+================================================================================
+3. ESTADO DO BACKEND
+================================================================================
+
+3.1 TABELAS (14)
+-----------------
+
+ #  Tabela                          Constraints relevantes
+ -- --------                        ----------------------
+  1 users                           UNIQUE(email), CHECK role, CHECK status
+  2 profiles                        UNIQUE(user_id), UNIQUE(cpf_cnpj), FK->users
+  3 clients                         UNIQUE(profile_id), FK->profiles
+  4 providers                       UNIQUE(profile_id), CHECK reputacao 0-5
+  5 collections                     UNIQUE(codigo_identif), FK->clients RESTRICT,
+                                    FK->providers SET NULL, CHECK status (9 vals),
+                                    UNIQUE(idempotency_key)
+  6 collection_items_declared       FK->collections CASCADE, CHECK qtd > 0
+  7 collection_items_checked        FK->collections CASCADE, CHECK qtd >= 0
+  8 tires                           FK->collections CASCADE,
+                                    UNIQUE parcial (collection_id, numero_fogo)
+                                    WHERE IS NOT NULL,
+                                    CHECK dot 3-10, CHECK semana 1-53,
+                                    CHECK idade >= 0
+  9 price_rules                     CHECK perfil_alvo, CHECK faixas,
+                                    CHECK valor >= 0, FK->users RESTRICT
+ 10 financial_transactions          FK->collections RESTRICT,
+                                    FK->profiles RESTRICT,
+                                    CHECK tipo_entidade, CHECK valor >= 0
+ 11 audit_logs                      FK->users RESTRICT
+ 12 idempotency_records             UNIQUE(chave), FK->users RESTRICT,
+                                    FK->collections RESTRICT,
+                                    CHECK escopo (4 vals)
+ 13 provider_restrictions           FK->providers CASCADE, FK->users RESTRICT,
+                                    CHECK status (3 vals)
+ 14 provider_reputation_events      FK->providers CASCADE,
+                                    FK->collections SET NULL,
+                                    CHECK tipo_evento (5 vals)
+
+3.2 AUTENTICACAO
+-----------------
+
+Componente                  Estado          Evidencia
+----------                  ------          ---------
+JWT HS256                   IMPLEMENTADO    security.py:create_access_token
+Argon2id                    IMPLEMENTADO    security.py:_hasher
+DUMMY_HASH (anti-timing)    IMPLEMENTADO    auth.py:login
+Rate limiting               FUNCIONAL       rate_limit.py (desativado por padrao)
+Refresh token               NAO IMPLEMENTADO Pendencia documentada
+2FA/OTP                     NAO IMPLEMENTADO Pendencia documentada
+
+3.3 RBAC
+---------
+
+Componente                  Estado          Evidencia
+----------                  ------          ---------
+require_roles()             IMPLEMENTADO    rbac.py, usado em todos endpoints
+3 roles                     IMPLEMENTADO    CLIENTE, PRESTADOR, ADMINISTRADOR
+Endpoints de teste          PRESENTE        rbac/test/* (temporarios, sem flag)
+
+3.4 OWNERSHIP
+--------------
+
+Componente                  Estado          Evidencia
+----------                  ------          ---------
+exigir_dono()               IMPLEMENTADO    ownership.py:7-9, retorna 404
+Anti-enumeracao             IMPLEMENTADO    Alheio e inexistente = 404
+
+================================================================================
+4. ESTADO DA API (35 endpoints)
+================================================================================
+
+ #  Metodo  Rota                                          Roles
+ -- ------  ----                                          -----
+  1 GET     /health                                       Publico
+  2 GET     /health/db                                    Publico
+  3 POST    /api/v1/auth/register                         Publico
+  4 POST    /api/v1/auth/login                            Publico
+  5 GET     /api/v1/auth/me                               Autenticado
+  6 GET     /api/v1/rbac/test/client                      CLIENTE
+  7 GET     /api/v1/rbac/test/provider                    PRESTADOR
+  8 GET     /api/v1/rbac/test/admin                       ADMINISTRADOR
+  9 POST    /api/v1/profile/client                        CLIENTE
+ 10 GET     /api/v1/profile/client                        CLIENTE
+ 11 PUT     /api/v1/profile/client                        CLIENTE
+ 12 POST    /api/v1/profile/provider                      PRESTADOR
+ 13 GET     /api/v1/profile/provider                      PRESTADOR
+ 14 PUT     /api/v1/profile/provider                      PRESTADOR
+ 15 GET     /api/v1/ownership/test/perfil/{id}            CLIENTE, PRESTADOR
+ 16 PUT     /api/v1/ownership/test/perfil/{id}            CLIENTE, PRESTADOR
+ 17 POST    /api/v1/collections                           CLIENTE
+ 18 GET     /api/v1/collections                           CLIENTE, PRESTADOR
+ 19 GET     /api/v1/collections/disponiveis               PRESTADOR
+ 20 GET     /api/v1/collections/{id}                      CLIENTE
+ 21 POST    /api/v1/collections/{id}/aceitar              PRESTADOR
+ 22 POST    /api/v1/collections/{id}/cancelar             CLIENTE, PRESTADOR, ADMIN
+ 23 POST    /api/v1/collections/{id}/status               PRESTADOR
+ 24 POST    /api/v1/collections/{id}/conferencia/iniciar  PRESTADOR
+ 25 POST    /api/v1/collections/{id}/conferencia/pneus    PRESTADOR
+ 26 GET     /api/v1/collections/{id}/conferencia/pneus    PRESTADOR
+ 27 POST    /api/v1/collections/{id}/conferencia/concluir PRESTADOR
+ 28 POST    /api/v1/collections/{id}/contestar            CLIENTE, ADMIN
+ 29 POST    /api/v1/admin/pricing-rules                   ADMINISTRADOR
+ 30 PATCH   /api/v1/admin/pricing-rules/{id}              ADMINISTRADOR
+ 31 POST    /api/v1/collections/{id}/finalizar            PRESTADOR
+ 32 GET     /api/v1/admin/pricing-rules                   ADMINISTRADOR
+ 33 GET     /api/v1/admin/audit-logs                      ADMINISTRADOR
+ 34 GET     /api/v1/admin/collections                     ADMINISTRADOR
+ 35 GET     /api/v1/admin/collections/{id}                ADMINISTRADOR
+
+================================================================================
+5. MAQUINA DE ESTADOS
+================================================================================
+
+Transicoes REAIS encontradas no codigo (collections.py:TRANSICOES_VALIDAS):
+
+Origem          Destino         Permitido?  Quem pode?              Arquivo/teste
+------          -------         ----------  ----------              -------------
+RASCUNHO        SOLICITADA      SIM         CLIENTE (criar)         collections.py:145
+SOLICITADA      ACEITA          SIM         PRESTADOR (aceitar)     collections.py:232
+SOLICITADA      CANCELADA       SIM         CLIENTE (cancelar)      collections.py:296
+ACEITA          EM_DESLOCAMENTO SIM         PRESTADOR (status)      collections.py:145
+ACEITA          CANCELADA       SIM         PRESTADOR/ADMIN         collections.py:316
+EM_DESLOCAMENTO EM_CONFERENCIA  SIM         PRESTADOR (iniciar)     collections.py:382
+EM_CONFERENCIA  CARREGADA       SIM         PRESTADOR (concluir)    collections.py:490
+CARREGADA       FINALIZADA      SIM         PRESTADOR (finalizar)   pricing.py:143
+FINALIZADA      CONTESTADA      SIM         CLIENTE/ADMIN           collections.py:570
+QUALQUER        CANCELADA       NAO         (bloqueado)             test_collections.py:15
+FINALIZADA      CANCELADA       NAO         (bloqueado)             test_cancelamento_aceita.py:10
+
+Sequencia principal solicitada:
+  SOLICITADA -> ACEITA -> EM_DESLOCAMENTO -> EM_CONFERENCIA -> CARREGADA -> FINALIZADA
+Implementada: SIM, exatamente esta sequencia, mais RASCUNHO, CANCELADA, CONTESTADA.
+
+================================================================================
+6. ESTADO DOS PNEUS
+================================================================================
+
+6.1 NUMERO DE FOGO
+-------------------
+
+Verificacao                          Estado     Evidencia
+-----------                          ------     ---------
+Individualizacao                     SIM        UUID proprio (tire.id)
+Unicidade por coleta                 SIM        UNIQUE parcial (migration 004)
+Repeticao em outra coleta            SIM        test_09 conferencia
+NULL permitido (ilegivel)            SIM        numero_fogo_ilegivel=true
+Ilegivel exige foto+observacao       SIM        collections.py:517-530
+Duplicata na mesma coleta bloqueada  SIM        Codigo + constraint + test_08/20
+
+6.2 DOT
+--------
+
+Verificacao                          Estado     Evidencia
+-----------                          ------     ---------
+Repeticao permitida                  SIM        500 pneus mesmo DOT aceitos
+Nao unicidade                        SIM        Sem UNIQUE constraint
+Formato 4 digitos WWYY               SIM        collections.py:507-513
+Semana 01-53                         SIM        CHECK constraint
+Calculo de idade                     PROVISORIO Anos completos (nao decimais)
+Alerta obsolescencia >= 7 anos       SIM        LIMITE_ALERTA_IDADE_ANOS
+
+================================================================================
+7. ESTADO FINANCEIRO
+================================================================================
+
+Verificacao                          Estado     Evidencia
+-----------                          ------     ---------
+Price rules (CRUD)                   SIM        pricing.py POST/PATCH/GET
+Autoridade do ADMIN                  SIM        Apenas ADMIN cria/altera
+Valor CLIENTE (snapshot)             SIM        snapshot_valor_cliente
+Valor PRESTADOR (snapshot)           SIM        snapshot_valor_prestador
+Independencia dos valores            SIM        Dois price_rules separados
+Snapshot imutavel                    SIM        Gravados em FINALIZADA
+Recalculo de coleta FINALIZADA       BLOQUEADO  test_financeiro.py:12,13
+Calculo: qtd_coletada x valor_unit   SIM        pricing.py:_calcular_valor
+Dois lancamentos financeiros         SIM        CLIENTE + PRESTADOR
+
+VERIFICACAO CRITICA: Coleta FINALIZADA NAO pode ter seu valor historico
+alterado. Confirmado por testes test_financeiro.py:12,13.
+
+================================================================================
+8. OUTBOX E IDEMPOTENCIA
+================================================================================
+
+8.1 OUTBOX (Flutter) — 4 operacoes offline
+-------------------------------------------
+
+Operacao                    Endpoint                                    Via Outbox
+--------                    --------                                    ----------
+Criar coleta                POST /collections                           SIM
+Registrar pneus             POST /collections/$id/conferencia/pneus    SIM
+Concluir conferencia        POST /collections/$id/conferencia/concluir SIM
+Finalizar coleta            POST /collections/$id/finalizar            SIM
+
+8.2 IDEMPOTENCIA (Backend) — 5 escopos
+----------------------------------------
+
+Escopo           Tabela                  Metodo                Estado
+-----            ------                  ------                ------
+Criacao coleta   collections (campos)    idempotency_response  IMPLEMENTADO
+Pneus            idempotency_records     UNIQUE(chave)         IMPLEMENTADO
+Conclusao        idempotency_records     UNIQUE(chave)         IMPLEMENTADO
+Finalizacao      idempotency_records     UNIQUE(chave)         IMPLEMENTADO
+Cancelamento     idempotency_records     UNIQUE(chave)+scope   IMPLEMENTADO
+
+8.3 PROBLEMA CONHECIDO: FOR UPDATE em SQLite
+---------------------------------------------
+
+- FOR UPDATE existe em: _stmt_aceite(), _stmt_avanco(), _coleta_do_provider(),
+  finalizar_coleta()
+- SQLite ignora FOR UPDATE (confirmado empiricamente na Missao 55.4)
+- Guard de robustez: try/except IntegrityError implementado
+- POSTGRESQL REAL: NAO VALIDADO
+
+================================================================================
+9. SEGURANCA
+================================================================================
+
+Componente                    Classif.   Estado         Evidencia
+----------                    --------   ------         ---------
+JWT HS256                     OK         IMPLEMENTADO   security.py
+Argon2id                      OK         IMPLEMENTADO   security.py:_hasher
+DUMMY_HASH (anti-timing)      OK         IMPLEMENTADO   auth.py:login
+RBAC (require_roles)          OK         IMPLEMENTADO   rbac.py
+Ownership (exigir_dono)       OK         IMPLEMENTADO   ownership.py
+Anti-enumeracao               OK         IMPLEMENTADO   404 para alheio
+extra=forbid (Pydantic)       OK         IMPLEMENTADO   ContestacaoRequest
+Middleware hardening           OK         IMPLEMENTADO   main.py: 1MB, headers
+HSTS                           OK         CONFIGURAVEL   Via HSTS_ENABLED env
+Senhas em texto puro           BLOQUEADO  NENHUMA        Verificado em todos arq
+Secrets no codigo              BLOQUEADO  NENHUM         .env.example=placeholder
+Rate limiting                  FUNCIONAL  DESATIVADO     rate_limit.py
+Refresh token                  AUSENTE    NAO IMPL.      Pendencia documentada
+2FA/OTP                        AUSENTE    NAO IMPL.      Pendencia documentada
+Endpoints teste em producao    MODERADO   rbac/test/*    Sem flag de remocao
+
+================================================================================
+10. ESTADO FLUTTER
+================================================================================
+
+Fluxo                               Estado     Evidencia
+-----                               ------     ---------
+Login/Logout                        COMPLETO   servico_sessao, tela_login
+Sessao persistente                  COMPLETO   flutter_secure_storage
+Cliente: criar coleta               COMPLETO   tela_cliente_criar + Outbox
+Cliente: listar coletas             COMPLETO   tela_cliente_minhas_coletas
+Cliente: resumo/contestar           COMPLETO   tela_cliente_resumo_coleta
+Cliente: cancelar                   COMPLETO   tela_cliente_minhas_coletas
+Prestador: listar disponiveis       COMPLETO   tela_prestador_listar_pendentes
+Prestador: aceitar                  COMPLETO   tela_prestador_listar_pendentes
+Prestador: deslocamento             COMPLETO   tela_prestador_detalhe_coleta
+Prestador: conferencia              COMPLETO   tela_prestador_conferencia+Outbox
+Prestador: finalizar                COMPLETO   tela_prestador_detalhe+Outbox
+Prestador: cancelar                 COMPLETO   tela_prestador_detalhe_coleta
+Prestador: resumo                   COMPLETO   tela_prestador_resumo_coleta
+Admin: painel Flutter               AUSENTE    Nenhuma tela de administrador
+Outbox completo                     COMPLETO   4 arquivos core/outbox/
+Sincronizacao automatica            COMPLETO   connectivity_plus, lifecycle
+Politica de erros HTTP              COMPLETO   Definitivos vs transitorios
+
+Classe nao utilizada: lib/core/models/usuario.dart — definida mas nunca
+importada por outra tela/servico. Candidata a remocao (Codigo Enxuto).
+
+================================================================================
+11. TESTES
+================================================================================
+
+11.1 BACKEND
+-------------
+Arquivos de teste: 18
+Passaram:         204
+Falharam:         0
+Ignorados:        0
+Erros:            0
+Warnings:         2 (deprecations: httpx starlette, jwt key length)
+
+Observacao: Os 204 testes rodam em SQLite in-memory. O warning de
+InsecureKeyLengthWarning em test_hardening.py:15 e causado por chave JWT de
+teste com apenas 12 bytes (abaixo do minimo de 32 para SHA256). Benigno em
+ambiente de teste.
+
+11.2 FLUTTER
+-------------
+Arquivos de teste: 15
+Passaram:         213
+Falharam:         0
+Erros:            0
+Analyze:          No issues found
+
+Observacao: 1 warning de hit test no tela_cliente_resumo_coleta_test.dart:315
+(botao "Contestar coleta" parcialmente obscured). Testa PASSA mas emite warning.
+Cosmetico.
+
+================================================================================
+12. POSTGRESQL
+================================================================================
+
+PostgreSQL real: NAO VALIDADO
+Motivo: Nenhum container/banco PostgreSQL esta disponivel no ambiente de
+desenvolvimento. Toda a suuite de testes (204 backend + 213 Flutter) roda
+exclusivamente em SQLite in-memory.
+
+Implicacoes:
+- FOR UPDATE e ignorado pelo SQLite
+- Extensao pgcrypto (usada na migration 001) nao esta disponivel
+- gen_random_uuid() nao esta disponivel (usado na migration 001)
+- Tipos UUID nativos do PostgreSQL sao testados como VARCHAR(36) no SQLite
+- JSONB e comportado como JSON no SQLite
+
+Risco: Migrations 001-005 nunca foram executadas contra PostgreSQL real.
+
+================================================================================
+13. MIGRATIONS
+================================================================================
+
+ #  Arquivo                         Objetivo                        Riscos
+ -- --------                        --------                        ------
+001 001_initial_schema.sql          Criar 13 tabelas + 15 indices   Usa pgcrypto/gen_random_uuid
+002 002_idempotencia_coleta.sql     Adicionar 2 colunas a collect.  Baixo
+003 003_outbox_idempotencia.sql     Criar tabela idempotency_recs   ** VARCHAR->UUID MODIFICADO LOCAL **
+004 004_tire_numero_fogo_unique.sql Criar indice unico parcial      Baixo
+005 005_cancelamento_escopo.sql     Adicionar CANCELACAO ao CHECK   Baixo
+
+MIGRACAO 003 — ALTERACAO LOCAL SIGNIFICATIVA:
+- Original:  user_id VARCHAR(36), recurso_id VARCHAR(36)
+- Modificado: user_id UUID, recurso_id UUID
+- Motivo: users.id e collections.id usam UUID nativo (migration 001);
+  VARCHAR(36) quebraria FK no PostgreSQL
+- NAO COMMITADO — alteracao local pendente
+
+Sem migration runner: Nao ha Alembic ou outra ferramenta. Migrations sao
+scripts SQL manuais.
+
+================================================================================
+14. DOCUMENTACAO
+================================================================================
+
+14.1 DOCUMENTACAO ATUALIZADA
+------------------------------
+- AGENTS.md — reflete regras atuais
+- STATUS_DO_PROJETO.md — reflete Missao 56 como ultima concluida
+- Relatorio_69.txt — baseline pos-VS_2.6
+- backend/README.md — reflete migrations 001-005 e 204 testes
+
+14.2 DOCUMENTACAO DESATUALIZADA
+---------------------------------
+- Relatorio_STATUS_ATUAL.txt — ainda lista Missao 41 como ultima
+- 06_MODELO_DE_DADOS.md §4.1 — ainda lista "DECISAO PENDENTE" sobre
+  duplicidade de numero de fogo (resolvido na Missao 09)
+
+14.3 DOCUMENTACAO CONFLITANTE
+-------------------------------
+- 03_REGRAS §4.3 — descreve "anos decimais"; codigo implementa anos completos
+- 08_SEGURANCA §3.1 — descreve "Refresh Token com hash"; nao implementado
+- 09_OFFLINE — descreve SQLite como banco local; codigo usa shared_preferences
+- 11_ROADMAP Fase 2 — menciona "refresh tokens"; nao implementado
+
+14.4 DOCUMENTACAO AUSENTE
+---------------------------
+- Nenhum swagger/OpenAPI exportado
+- Nenhum diagrama de sequencia para fluxo de conferencia
+
+================================================================================
+15. LINHA DO TEMPO DAS MISSOES
+================================================================================
+
+Missao    Estado        Evidencia                    Observacao
+------    ------        ---------                    ----------
+01-32     CONCLUIDA     STATUS_DO_PROJETO.md §4      32 missoes base
+33-38     CONCLUIDA     STATUS_DO_PROJETO.md §4.1    Funcionalidades incrementais
+39        CONCLUIDA     Relatorio_66.txt             Remocao Firebase
+40-41     CONCLUIDA     Relatorio_STATUS_ATUAL.txt   Ultima desse relatorio
+42-52     CONCLUIDA     STATUS_DO_PROJETO.md         Incrementos documentados
+53        CONCLUIDA     Relatorio_65/66.txt          11 decisoes cancelamento
+54        CONCLUIDA     RELATORIO_54.md              Auditoria de estado
+55        CONCLUIDA     RELATORIO_MISSAO_55.md       Cancelamento em 2 cenarios
+55.1      CONCLUIDA     RELATORIO_MISSAO_55_1.md     Idempotencia no Flutter
+55.3      CONCLUIDA     RELATORIO_MISSAO_55_3.md     Auditoria forense + correcoes
+55.4      CONCLUIDA     RELATORIO_MISSAO_55_4.md     FOR UPDATE SQLite + IntegrityErr
+56        CONCLUIDA     RELATORIO_MISSAO_56_1.md     Resumo do CLIENTE
+57        NAO INICIADA  STATUS_DO_PROJETO.md         Validacao DDL PostgreSQL
+58        NAO INICIADA  STATUS_DO_PROJETO.md         Higiene do repositorio
+
+================================================================================
+16. FUNCIONALIDADES IMPLEMENTADAS
+================================================================================
+
+ 1. Autenticacao JWT com Argon2id
+ 2. RBAC com 3 perfis (CLIENTE, PRESTADOR, ADMINISTRADOR)
+ 3. Ownership com anti-enumeracao
+ 4. CRUD de perfis (cliente e prestador)
+ 5. Criacao de coleta com idempotencia
+ 6. Maquina de estados completa (9 estados)
+ 7. Aceite de coleta com race condition seguro (FOR UPDATE)
+ 8. Cancelamento diferenciado (CLIENTE: SOLICITADA; PRESTADOR/ADMIN: ACEITA)
+ 9. Conferencia sem re-digitacao (itens carregados do backend)
+10. Registro individualizado de pneus (UUID + DOT + numero de fogo)
+11. Validacao de DOT (formato, idade, alerta >= 7 anos)
+12. Bloqueio de numero de fogo duplicado na mesma coleta
+13. Tres quantidades (declarada, conferida, coletada)
+14. Divergencia com justificativa + foto
+15. Finalizacao financeira com snapshots imutiveis
+16. Dois lancamentos financeiros independentes (CLIENTE/PRESTADOR)
+17. Regras de preco parametrizadas (CRUD admin)
+18. Dashboard administrativa (somente leitura, com paginacao)
+19. Trilha de auditoria (audit_logs)
+20. Outbox Pattern com persistencia (SharedPreferences)
+21. Idempotencia via X-Idempotency-Key (UUIDv4) em 5 operacoes
+22. Politica de erros HTTP (definitivos vs transitorios)
+23. Sincronizacao automatica (connectivity + lifecycle)
+24. Middleware de hardening (headers seguranca, 1MB limit, HSTS)
+25. Rate limiting (configuravel, desativado por padrao)
+26. Resumo do CLIENTE com pneus conferidos (FINALIZADA)
+27. Tela de login com tratamento de erros
+28. Fluxo completo do CLIENTE (criar, listar, detalhar, cancelar, contestar)
+29. Fluxo completo do PRESTADOR (listar, aceitar, deslocar, conferir, finalizar)
+30. Restricoes motivadas de prestadores (tabela + constraints)
+
+================================================================================
+17. FUNCIONALIDADES PARCIAIS
+================================================================================
+
+1. Calculo de idade DOT — implementado em anos completos; doc pede decimais
+2. Endpoints de teste — rbac/test/* e ownership/test/* existem sem flag
+3. Rate limiting — funcional mas single-process (nao escala horizontalmente)
+4. Ownership module — funcao exigir_dono implementada; endpoints redundantes
+
+================================================================================
+18. PENDENCIAS
+================================================================================
+
+18.1 IMPLEMENTADO MAS NAO VALIDADO
+------------------------------------
+- TODA a suuite de testes roda em SQLite; PostgreSQL real nunca executado
+- Migrations 001-005 nunca rodaram no PostgreSQL
+- FOR UPDATE nao testado em PostgreSQL
+
+18.2 PARCIALMENTE IMPLEMENTADO
+--------------------------------
+- Calculo de idade DOT (anos completos vs decimais)
+- Endpoints de teste em producao (rbac/test, ownership/test)
+
+18.3 NAO IMPLEMENTADO
+-----------------------
+ 1. Refresh token (renovacao automatica de sessao)
+ 2. 2FA/OTP
+ 3. Dashboard mobile-first do prestador (ganhos, coletas, reputacao)
+ 4. Painel administrativo no Flutter
+ 5. Notificacao ao administrador
+ 6. Liquidacao via Pix
+ 7. Banco local relacional (SQLite/Drift vs shared_preferences)
+ 8. Assinatura digital no encerramento
+ 9. itens_conferidos no Resumo do CLIENTE
+10. Formula decimal precisa de idade DOT
+11. Upload de fotos (provedor de armazenamento de objetos)
+12. Integracao WhatsApp/Email
+13. Multiplos usuarios vinculados a mesma empresa (perfil corporativo)
+14. Subtipos para perfil PRESTADOR
+
+18.4 DECISAO PENDENTE
+-----------------------
+ 1. Politica comercial de atendimento regional
+ 2. Integracao com balancas de caminhao
+ 3. Selecao do pacote de banco local (Drift/SQLite vs Isar vs Hive)
+ 4. Provedor de armazenamento de objetos (S3 vs R2 vs Supabase Storage)
+ 5. Prazo para contestacao automatica
+ 6. Formula matematica e pesos para reputacao
+ 7. Assinatura digital obrigatoria no MVP
+ 8. Regras de tolerancia percentual para divergencias
+ 9. Compactacao previa de fotos offline
+10. Mascaramento de CPF/CNPJ
+11. Senha minima
+
+18.5 PROBLEMA CONHECIDO
+-------------------------
+1. SQLite ignora FOR UPDATE (Missao 55.4 — mitigado com guard IntegrityError)
+2. Migration 003 VARCHAR(36) incompativel com UUID no PostgreSQL (correcao local)
+3. Rate limiting single-process (nao persiste entre reinicios)
+
+================================================================================
+19. MAPA DE RISCOS
+================================================================================
+
+Risco                               Severidade  Evidencia         Requer acao?
+----                                ----------  ---------         ------------
+PostgreSQL nunca validado            CRITICO     Nenhum teste PG   SIM
+Migration 003 VARCHAR->UUID nao com  ALTO        git diff local    SIM
+FOR UPDATE nao testado em PostgreSQL ALTO        RELATORIO_55_4    SIM
+Endpoints de teste em producao       MODERADO    rbac/test/*       SIM
+Rate limiting single-process         MODERADO    rate_limit.py     SIM (producao)
+Refresh token ausente                MODERADO    Nenhum codigo     SIM (MVP)
+Classe usuario.dart nao utilizada    BAIXO       models/usuario    SIM (higiene)
+widget_test.dart placeholder         BAIXO       test/widget_test  SIM (higiene)
+build/ versionado no git             BAIXO       meu_app/build/    SIM (Missao 58)
+InsecureKeyLengthWarning (testes)    INFO        test_hardening    NAO
+Warning deprec httpx/starlette       INFO        FastAPI TestClient NAO
+
+================================================================================
+20. CONFLITOS ENCONTRADOS
+================================================================================
+
+CONFLITO 1 — Calculo de idade DOT
+  Fonte A: 03_REGRAS_DE_NEGOCIO.md §4.3 — "anos decimais"
+  Fonte B: collections.py:_calcular_idade_anos — anos completos
+  Diferenca: Documento pede decimal; codigo usa inteiro
+  Impacto: Alerta pode atrasar ate 1 ano
+  Decisao necessaria? SIM
+
+CONFLITO 2 — Refresh token
+  Fonte A: 08_SEGURANCA.md §3.1 — "Refresh Token com hash no banco"
+  Fonte B: Nenhum codigo de refresh token existe
+  Diferenca: Documento descreve funcionalidade nao implementada
+  Impacto: Sessao expira em 30min sem renovacao
+  Decisao necessaria? SIM (MVP ou V2)
+
+CONFLITO 3 — Banco local
+  Fonte A: 09_OFFLINE.md — descreve SQLite como banco local
+  Fonte B: Codigo usa shared_preferences (JSON)
+  Diferenca: Documento prevê banco relacional; codigo usa JSON
+  Impacto: Consultas offline complexas nao suportadas
+  Decisao necessaria? SIM
+
+CONFLITO 4 — Doc 06 §4.1
+  Fonte A: 06_MODELO_DE_DADOS.md §4.1 — "DECISAO PENDENTE"
+  Fonte B: STATUS_DO_PROJETO.md — "resolvido na Missao 09"
+  Diferenca: Doc 06 nao foi atualizado
+  Impacto: Baixo (resolucao existe no codigo e testes)
+  Decisao necessaria? NAO (atualizacao documental)
+
+================================================================================
+21. MATRIZ DE CONFIANCA
+================================================================================
+
+Area                 Classificacao     Evidencia
+----                 -------------     ---------
+Arquitetura          CONFIRMADO        Flutter->FastAPI->PostgreSQL
+Backend              CONFIRMADO        204 testes, 14 modulos, 14 tabelas
+API                  CONFIRMADO        35 endpoints mapeados
+Banco                PROVAVEL          ORM confirma; DDL PG nao validado
+Migrations           NAO CONFIRMADO    Scripts existem; nunca executados contra PG
+Autenticacao         CONFIRMADO        JWT + Argon2id + testes
+RBAC                 CONFIRMADO        require_roles + 3 perfis + testes
+Coleta               CONFIRMADO        Maquina de estados completa
+Pneus                CONFIRMADO        Individualizacao, DOT, fogo + testes
+DOT                  CONFLITANTE       Codigo: anos completos; Doc: decimais
+Numero de Fogo       CONFIRMADO        UNIQUE parcial, bloqueio + testes
+Financeiro           CONFIRMADO        Snapshots imutiveis + testes
+Outbox               CONFIRMADO        4 operacoes offline + persistencia
+Idempotencia         CONFIRMADO        5 escopos, UUIDv4
+Flutter              CONFIRMADO        213 testes, fluxos completos
+Testes               CONFIRMADO        204 + 213, todos passando
+Documentacao         CONFLITANTE       4 conflitos identificados
+Git                  CONFIRMADO        VS_2.6, commit verificado
+PostgreSQL           NAO CONFIRMADO    Nenhum teste/execucao contra PG real
+
+================================================================================
+22. DIFERENCA EM RELACAO AO VS_2.6
+================================================================================
+
+Item                        Baseline (informado)  Estado atual     Diferenca
+----                        -------------------   ------------     ---------
+Commit                      cdb4254               cdb4254          IDENTICO
+Working tree                Limpo                 1 arq modificado  DIVERGENTE
+Backend testes              204 passando           204 passando     IDENTICO
+Flutter testes              213 passando           213 passando     IDENTICO
+flutter analyze             No issues              No issues        IDENTICO
+Arquivo modificado          Nenhum                 003_outbox_*.sql NOVO
+Arquivo nao rastreado       Nenhum                 Relatorio_69.txt NOVO
+Ahead of origin             0                      1 commit         DIVERGENTE
+
+================================================================================
+23. PONTO EXATO DE RETOMADA
+================================================================================
+
+Baseline confirmada:
+  Commit:    cdb4254f67a3cf8c9900cd0d5d9700ff101579c2 (VS_2.6)
+  Backend:   204 testes passando
+  Flutter:   213 testes passando
+  Analyze:   sem alertas
+
+Estado da working tree:
+  MODIFICADO: backend/db/migrations/003_outbox_idempotencia.sql
+              (correcao VARCHAR->UUID, nao commitada)
+  NAO RASTREADO: Relatorio_69.txt
+
+Proxima missao recomendada: Missao 57 — Validacao DDL em PostgreSQL real
+
+Pre-requisitos para Missao 57:
+  1. Decidir se alteracao local na migration 003 (VARCHAR->UUID) sera commitada
+  2. Disponibilizar PostgreSQL real (Docker ou servico)
+  3. Executar migrations 001-005 contra PostgreSQL
+  4. Validar que a suuite de 204 testes passa contra PostgreSQL
+
+================================================================================
+FIM DO RELATORIO 70
+================================================================================

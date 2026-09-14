@@ -1,0 +1,206 @@
+================================================================================
+RELATORIO 71 — CHECKPOINT E AUDITORIA DE ESTADO POS-MISSOES 57 E 58
+================================================================================
+Data: 2026-09-14
+Origem: Solicitacao do usuario para consolidacao de estado seguro
+Base inicial: VS_2.6 | commit cdb4254
+Base atual:   Commit 4811797 (Missao 58) | Branch main
+Ambiente:     PostgreSQL 15.19 real validado | SQLite in-memory intacto
+================================================================================
+
+SUMARIO EXECUTIVO
+--------------------------------------------------------------------------------
+O projeto alcancou um marco critico de maturidade e seguranca tecnica:
+1. A compatibilidade com PostgreSQL 15+ real foi empiricamente comprovada na
+   Missao 57 (todas as 5 migrations executadas, tipos nativos validados, DDL,
+   locks FOR UPDATE, indices parciais e constraints de idempotencia/escopo).
+2. A suite de testes continua 100% verde (204 backend no PostgreSQL, 204 no
+   SQLite, 213 no Flutter e analyze limpo).
+3. A Missao 58 realizou o saneamento rigoroso do Git: oficializou a correcao da
+   migration 003 (UUID nas foreign keys), descartou com seguranca arquivos
+   temporarios, restaurou o cache binario de testes e gerou o commit limpo 4811797.
+4. O working tree encontra-se sem qualquer modificacao pendente em arquivos
+   rastreados, garantindo base solida para as proximas etapas.
+
+================================================================================
+1. ESTADO DO GIT E VERSIONAMENTO
+================================================================================
+
+Branch:                  main
+Commit Atual:            481179745e0517ca2626e5e408ecbbef386dfd54 (4811797)
+Mensagem do Commit:      Missao 58: Oficializacao da migration 003 (UUID) e Git hygiene pos-validacao PostgreSQL
+Commit Anterior:         cdb4254f67a3cf8c9900cd0d5d9700ff101579c2 (VS_2.6)
+Relacao com remoto:      Ahead of 'origin/main' por 2 commits (cdb4254 e 4811797)
+Working Tree (Tracked):  100% LIMPO — nenhum arquivo rastreado com modificacoes locais
+Git Stash:               Vazio (nenhuma alteracao oculta em stash)
+
+Historico Recente de Commits:
+  4811797 Missao 58: Oficializacao da migration 003 (UUID) e Git hygiene pos-validacao PostgreSQL
+  cdb4254 VS_2.6 (Missao 56 — Resumo/comprovante do cliente)
+  95f7880 VS_2.5 (Missao 55 — Cancelamento pelo cliente e correcoes)
+  0f0af91 VS_2.4 (Missao 54 — Cancelamento de coleta e hardening)
+  a6818ee VS_2.3
+
+================================================================================
+2. HISTORICO RECENTE DAS ETAPAS CONCLUIDAS
+================================================================================
+
+2.1 MISSAO 56 — RESUMO/COMPROVANTE DO CLIENTE (Commit cdb4254 — VS_2.6)
+------------------------------------------------------------------------
+- Problema: Endpoint GET /api/v1/collections/{id} nao entregava pneus conferidos
+  ao CLIENTE, exibindo "Nenhum pneu conferido registrado" na tela de resumo.
+- Correcao: Serializador obter_coleta enriquecido para carregar pneus e itens
+  conferidos sob controle estrito de ownership e RBAC.
+- Resultado: 4 novos testes criados (total 204 backend), 213 Flutter e analyze limpo.
+
+2.2 MISSAO 57 — VALIDACAO POSTGRESQL 15.19 REAL (Relatorio: RELATORIO_MISSAO_57_1.md)
+-------------------------------------------------------------------------------------
+- Ambiente: PostgreSQL 15.19 real rodando em 127.0.0.1:5432 (banco coleta_pneus_teste).
+- Migrations 001 a 005 executadas integralmente com sucesso.
+- Validacoes empiricas comprovadas por scripts DDL/DML:
+  a) Migration 003: user_id e recurso_id operando como UUID nativo, aceitando FKs
+     para users(id) e collections(id) sem erro de tipo.
+  b) Indice parcial de Numero de Fogo: duplicatas bloqueadas na mesma coleta;
+     mesmo numero permitido em coletas distintas; nulos (ilegivel) permitidos.
+  c) DOT repetido: multiplos pneus com mesmo DOT permitidos na mesma coleta.
+  d) CHECK de escopo de idempotencia: 4 valores validos (PNEUS, CONCLUSAO,
+     FINALIZACAO, CANCELACAO) aceitos; valores invalidos rejeitados pelo SGBD.
+  e) FOR UPDATE: lock concorrencial em nivel de linha testado com sucesso.
+  f) Idempotencia: bloqueio por chave duplicada verificado no banco.
+- Resultado dos Testes:
+  - 204 testes backend passando contra PostgreSQL 15.19 real.
+  - 204 testes backend passando contra SQLite (baseline intacta).
+  - 213 testes Flutter passando.
+  - Flutter analyze limpo.
+
+2.3 MISSAO 58 — GIT HYGIENE E SANEAMENTO (Commit 4811797)
+---------------------------------------------------------
+- Oficializacao da Migration 003: backend/db/migrations/003_outbox_idempotencia.sql
+  adicionada ao controle de versao com tipos UUID e notas de portabilidade.
+- Remocao de arquivos comprovadamente temporarios:
+  backend/db/migrations/teste_57_dados.sql descartado com seguranca.
+- Limpeza de Cache Binario Flutter:
+  meu_app_coleta_pneus/build/test_cache/build/*.cache.dill.track.dill restaurado
+  ao estado do commit cdb4254, evitando sujeira binaria de 50 MB no working tree.
+- Validacao Direcionada: 28 testes (test_outbox, test_idempotencia, test_db_schema)
+  executados e 100% aprovados antes do commit.
+- Documentacao: Gerado RELATORIO_MISSAO_58_1.md.
+
+================================================================================
+3. ESTADO DETALHADO DO BANCO DE DADOS E MIGRATIONS
+================================================================================
+
+Status das 5 Migrations Manuais:
+--------------------------------------------------------------------------------
+Migration | Arquivo                          | Status PostgreSQL 15+ | Status SQLite
+--------- | -------------------------------- | --------------------- | -------------
+001       | 001_initial_schema.sql           | VALIDADO (14 tabelas) | VALIDADO
+002       | 002_idempotencia_coleta.sql      | VALIDADO (snapshots)  | VALIDADO
+003       | 003_outbox_idempotencia.sql      | OFICIALIZADO (UUID)   | VALIDADO
+004       | 004_tire_numero_fogo_unique.sql  | VALIDADO (idx parcial)| VALIDADO
+005       | 005_cancelamento_escopo.sql      | VALIDADO (CHECK 4 esc)| VALIDADO
+
+Observacoes Arquiteturais de Banco:
+- O backend mantem suporte dual transparente: execucao rapida em memoria com
+  SQLite nos testes unitarios e compatibilidade estrita com PostgreSQL 15+ em
+  producao/staging.
+- Nao ha uso de Alembic (regra permanente do projeto: migrations SQL manuais).
+
+================================================================================
+4. MAPA COMPLETO DOS ARQUIVOS NO REPOSITORIO
+================================================================================
+
+4.1 Arquivos Rastreados Modificados nesta Sessao:
+- backend/db/migrations/003_outbox_idempotencia.sql (Commitado no 4811797)
+
+4.2 Arquivos Temporarios Removidos:
+- backend/db/migrations/teste_57_dados.sql (Excluido do filesystem)
+
+4.3 Arquivos Preservados Fora do Commit (Untracked no Filesystem):
+Estes arquivos foram preservados intencionalmente e NAO devem ser apagados:
+- RELATORIO_MISSAO_57_1.md (Relatorio tecnico da validacao PostgreSQL)
+- RELATORIO_MISSAO_58_1.md (Relatorio tecnico do saneamento Git)
+- Relatorio_69.txt         (Relatorio de auditoria previo)
+- Relatorio_70.txt         (Relatorio de auditoria forense previo — fonte de verdade)
+- Relatorio_71.txt         (Este relatorio de checkpoint)
+
+4.4 Situacao dos Caches e Builds:
+- meu_app_coleta_pneus/build/: Contem 8 arquivos versionados no Git desde VS_2.1–VS_2.5.
+  A regra /build/ existe em meu_app_coleta_pneus/.gitignore. Nenhuma remocao destrutiva
+  foi feita para nao desestruturar o historico sem autorizacao.
+- .pytest_cache/ e backend/.pytest_cache/: Devidamente ignorados (contem .gitignore
+  proprio gerado pelo pytest com '*').
+
+================================================================================
+5. REGRAS INVIOLAVEIS CONFIRMADAS NO CODIGO ATUAL
+================================================================================
+
+1. ARQUITETURA:
+   Flutter (Multiplataforma) -> FastAPI (Python 3.11+) -> PostgreSQL 15+
+2. AUTORIDADE ABSOLUTA:
+   O backend recalcula e valida tudo. Nao ha calculo financeiro nem autorizacao
+   confiada ao frontend.
+3. SEPARACAO DE PAPEIS:
+   CLIENTE, PRESTADOR e ADMINISTRADOR com RBAC e ownership enforcados.
+4. IDENTIFICACAO DE PNEUS:
+   - Cada pneu tem registro individual com UUID proprio.
+   - DOT NAO e unico; permite repeticoes sem restricao. Idade calculada no backend.
+   - Numero de Fogo unico apenas dentro da mesma coleta (indice parcial).
+5. INDEPENDENCIA FINANCEIRA:
+   - Valor pago ao prestador desacoplado do valor cobrado do cliente.
+   - Snapshots imutaveis no fechamento da coleta; sem alteracao retroativa.
+6. RESILIENCIA OFFLINE:
+   - Outbox Pattern no Flutter com cabecalho X-Idempotency-Key (UUIDv4).
+   - Backend idempotente prevenindo processamento duplicado.
+
+================================================================================
+6. PONTO EXATO DE PARADA (CHECKPOINT)
+================================================================================
+
+Estado Atual:
+  - Codigo do Backend: 100% estavel, validado em PostgreSQL e SQLite.
+  - Codigo do Flutter: 100% estavel, 213 testes passando, analyze limpo.
+  - Migrations: 001–005 concluidas, testadas e oficializadas no Git.
+  - Working Tree: Limpo de alteracoes nao autorizadas ou sujas.
+  - Documentacao de Missao: Relatorios 57, 58 e 71 disponiveis para continuidade.
+
+================================================================================
+7. PROXIMAS ETAPAS RECOMENDADAS (ROADMAP OPERACIONAL SEGURO)
+================================================================================
+
+Para prosseguir com maxima seguranca e sem risco de regressoes, as opcoes a
+seguir representam os caminhos naturais do projeto:
+
+Opcao A: Tag de Release e Consolidacao Formal (VS_2.7)
+  - Criar commit de documentacao atualizando STATUS_DO_PROJETO.md e
+    backend/README.md com o registro das Missoes 57 e 58.
+  - Incluir os relatorios de missao (57 e 58) no controle de versao formal.
+  - Gerar a tag de versao estavel VS_2.7.
+
+Opcao B: Limpeza Definitiva dos Arquivos de Build Rastreados no Flutter
+  - Executar git rm --cached nos 8 arquivos residuais de build/ rastreados no Git
+    em versoes anteriores (meu_app_coleta_pneus/build/test_cache e unit_test_assets).
+  - Garantir que futuras execucoes de teste nao gerem modificacoes acidentais
+    no working tree.
+
+Opcao C: Avanco no Dominio de Negocio e Features Pendentes
+  - Implementacao da contestacao completa com fotos/evidencias e fluxo de saida
+    de CONTESTADA pelo Administrador (conforme doc 03 §18).
+  - Integracao do upload de imagens de divergencias na conferencia.
+  - Painel administrativo / dashboard de auditoria com metricas em tempo real.
+
+================================================================================
+8. CHECKLIST DE SEGURANCA PARA O PROXIMO AGENTE / MODELO
+================================================================================
+
+Antes de iniciar qualquer nova missao:
+[ ] Executar 'git status' e verificar que apenas os relatorios untracked permanecem.
+[ ] Nao apagar Relatorio_69.txt, Relatorio_70.txt, Relatorio_71.txt nem RELATORIO_MISSAO_*.md.
+[ ] Nao reverter a migration 003 (UUID deve permanecer).
+[ ] Manter a prioridade: funcionamento > seguranca > consistencia > testes > estetica.
+[ ] Rodar testes direcionados ou completos antes e depois de qualquer alteracao.
+[ ] Nao introduzir segredos, senhas ou tokens no codigo.
+
+================================================================================
+FIM DO RELATORIO 71
+================================================================================
